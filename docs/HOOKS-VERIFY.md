@@ -53,7 +53,7 @@ runtime-state.json 已写入，版本对账静默通过）。注意该项目的 
    注册表里没有新工具，`run.py` 对未注册工具**设计上静默放行**——表现为
    「钩子没反应」。重装一次运行时即恢复；`check.py` 与 pre-commit 对账层不受影响。
    **✅ 2026-09-24 已加版本对账**：安装时把套件版本与源仓库路径写进
-   `.codingskills/runtime-state.json`，`run.py` 每次调用与套件根 `VERSION`
+   `.cardsmith/runtime-state.json`，`run.py` 每次调用与套件根 `VERSION`
    对撞，落后就 stderr 警告（不阻断、不联网、仓库不在本机不误报）。
    自检：`python hooks/run.py --selftest`（6 用例）。
 
@@ -112,7 +112,7 @@ echo "from <你的外层包> import x" >> <你的内层包>/xxx.py
 ```bash
 cd <你的项目>
 echo '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"<绝对路径>"}}' \
-  | python .codingskills/hooks/run.py import-direction --blocking
+  | python .cardsmith/hooks/run.py import-direction --blocking
 echo "退出码=$?   # 有违规应为 2"
 ```
 

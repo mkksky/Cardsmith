@@ -8,7 +8,7 @@
     hooks/hooks.json              WorkBuddy 钩子配置（插件级约定位置）
     hooks/registry.json           工具注册表，hooks/run.py 按它找脚本
     hooks/pre-commit-plan.json    git 钩子要跑哪些工具
-    RUNTIME-README.md             项目运行时说明（install.py 落为 .codingskills/README.md）
+    RUNTIME-README.md             项目运行时说明（install.py 落为 .cardsmith/README.md）
 
 所有生成物都是**确定性**的：同一张卡片永远产出同样的字节。
 check.py 靠这一点做逐字节比对，从而发现「卡片改了没重跑」和「生成物被手改」。
@@ -17,7 +17,7 @@ check.py 靠这一点做逐字节比对，从而发现「卡片改了没重跑�
     python scripts/build.py                  # 生成全部
     python scripts/build.py --only <name>    # 只生成某张卡片
     python scripts/build.py --check          # 只比对不写盘（check.py 内部用）
-    python scripts/build.py --prefix .codingskills/    # 安装到项目时的路径前缀
+    python scripts/build.py --prefix .cardsmith/    # 安装到项目时的路径前缀
 
 退出码：0 = 成功/无差异，1 = 卡片有问题，2 = --check 模式下发现差异。
 """
@@ -57,7 +57,7 @@ VALID_INPUTS = {"staged-files", "all-files", "none"}
 
 GENERATED_HEADER = "<!-- 本文件由 scripts/build.py 从 cards/{card} 生成，请勿直接修改。 -->"
 # 装到项目时运行时的目录名。与 scripts/install.py 的 RUNTIME_DIRNAME 保持一致。
-RUNTIME_DIRNAME = ".codingskills"
+RUNTIME_DIRNAME = ".cardsmith"
 
 
 class CardError(Exception):
@@ -288,10 +288,10 @@ def render_registry(cards: "list[dict]", prefix: str) -> dict:
 
     路径一律**相对运行时根**（即 run.py 所在目录的上一级），不加 prefix：
         · 套件自身：运行时根 = 仓库根，脚本就在 tools/x.py
-        · 装到项目：运行时根 = <项目>/.codingskills，脚本在 .codingskills/tools/x.py
+        · 装到项目：运行时根 = <项目>/.cardsmith，脚本在 .cardsmith/tools/x.py
     两处都写成 tools/x.py 即可 —— prefix 只管 hooks.json 里 run.py 自己的路径。
     踩过的坑：早期版本给 script 也加了 prefix，结果 run.py 再拼一次变成
-    .codingskills/.codingskills/tools/...，脚本永远找不到。
+    .cardsmith/.cardsmith/tools/...，脚本永远找不到。
     """
     registry: dict = {"description": "由 scripts/build.py 生成，勿手改。hooks/run.py 按本表定位脚本。", "tools": {}}
     for card in cards:
@@ -441,7 +441,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="卡片 → 生成物")
     ap.add_argument("--only", nargs="+", metavar="NAME", help="只处理指定卡片")
     ap.add_argument("--check", action="store_true", help="只比对不写盘（有差异返回 2）")
-    ap.add_argument("--prefix", default="", help="路径前缀，安装到项目时用 .codingskills/")
+    ap.add_argument("--prefix", default="", help="路径前缀，安装到项目时用 .cardsmith/")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 

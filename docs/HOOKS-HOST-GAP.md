@@ -119,7 +119,7 @@ function isSettingScopeAllowedSync(scope, argv = process.argv){
 ### 2.5 用户级路径的实际取值
 
 `getHomeSkillsDir() = getHomeDir()/skills`，而本机技能装在
-`%USERPROFILE%\.workbuddy\skills\`（`.codingskills-state.json` 亦在此），
+`%USERPROFILE%\.workbuddy\skills\`（`.cardsmith-state.json` 亦在此），
 且内置插件缓存在 `~/.workbuddy/plugins/cache/`（= `getHomePluginsDir()`）。
 
 → 反推 **`getHomeDir() = %USERPROFILE%\.workbuddy`**，

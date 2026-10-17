@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # 运行时根：脚本与规则文件的基准目录。registry 里的 tools/x.py 就是相对它。
 #   套件自身   → <仓库>/hooks/run.py     ⇒ 运行时根 = <仓库>
-#   装到项目   → <项目>/.codingskills/hooks/run.py ⇒ 运行时根 = <项目>/.codingskills
+#   装到项目   → <项目>/.cardsmith/hooks/run.py ⇒ 运行时根 = <项目>/.cardsmith
 RUNTIME_ROOT = HERE.parent
 REGISTRY_FILE = HERE / "registry.json"
 TOOL_TIMEOUT = 120
@@ -42,10 +42,10 @@ def project_root() -> Path:
     """被检查文件所属的项目根。
 
     与运行时根不是一个东西 —— 这点踩过坑：
-    装到项目后，tools 在 <项目>/.codingskills/ 下，但被编辑的文件在 <项目>/ 下。
+    装到项目后，tools 在 <项目>/.cardsmith/ 下，但被编辑的文件在 <项目>/ 下。
     两者混用会让文件路径无法转成相对路径，报错信息里全是不好读的绝对路径。
     """
-    if RUNTIME_ROOT.name == ".codingskills":
+    if RUNTIME_ROOT.name == ".cardsmith":
         return RUNTIME_ROOT.parent
     return RUNTIME_ROOT
 

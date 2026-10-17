@@ -1,7 +1,7 @@
 # 变更记录
 
 版本号的唯一用途是**运行时对账**：`hooks/run.py` 拿项目里
-`.codingskills/runtime-state.json` 的 `suite_version`，与套件仓库根 `VERSION` 比对，
+`.cardsmith/runtime-state.json` 的 `suite_version`，与套件仓库根 `VERSION` 比对，
 不一致就在 stderr 提示重装（机制见 `docs/HOOKS-VERIFY.md`）。
 
 > ⚠️ **改了 `tools/` `rules/` `hooks/` 的行为，就必须 bump 根目录的 `VERSION`。**
@@ -78,7 +78,7 @@
 > ⚠️ **对已安装项目不自动生效**：`install.py` 对 `rules/` 的策略是
 > 「已有的保留，只补套件新增的」（阈值与 `skip_paths` 归项目所有）。
 > 项目要切到新阈值，需手动同步该 JSON，再跑
-> `python .codingskills/tools/check_size_naming.py --rules .codingskills/rules/file-size-and-naming-guard.json --all --update-baseline`
+> `python .cardsmith/tools/check_size_naming.py --rules .cardsmith/rules/file-size-and-naming-guard.json --all --update-baseline`
 > 收紧棘轮（`--all` 不能省）。
 
 ---

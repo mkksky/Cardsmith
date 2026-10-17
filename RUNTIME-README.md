@@ -1,8 +1,8 @@
-# codingskills 运行时说明
+# cardsmith 运行时说明
 
 <!-- 本文件由 scripts/build.py 从 cards/ 生成，请勿直接修改。改内容请改 build.py 或对应卡片。 -->
 
-本目录是 codingskills 套件装进本项目的运行时，为 git 提交提供自动化检查门禁。
+本目录是 cardsmith 套件装进本项目的运行时，为 git 提交提供自动化检查门禁。
 工具清单与绑定关系由套件仓库的 `cards/` 声明；重装只会更新工具、补充新规则文件，
 **`rules/` 里的项目定制（层级 pattern、阈值、skip_paths、composition_roots）不会被覆盖**。
 
@@ -64,7 +64,7 @@ python tools/<检查脚本> --rules rules/<规则>.json --all --update-baseline
 - **真源在套件上游仓**（独立 git 仓库，不在本项目内）。改守卫行为的顺序：改上游
   `cards/`、`tools/` → 上游跑 `scripts/build.py --check` → 重装本项目（`python
   <上游>/scripts/install.py --project <本项目> --with-git-hook`）。**不要直接改本项目
-  `.codingskills/tools/`** —— 重装即被上游覆盖，改了不生效；运行时读的是 `tools/` 与
+  `.cardsmith/tools/`** —— 重装即被上游覆盖，改了不生效；运行时读的是 `tools/` 与
   `rules/`，不是 `cards/`。
 - 本项目定制（`source_roots`、`cf_doc_bases`、`allow_refs`、`allow_ref_patterns`、棘轮基线）
   全在 `rules/` 与 `baselines/`，跟本项目走，重装不覆盖。

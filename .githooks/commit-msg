@@ -7,7 +7,7 @@
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 
 RUNNER=""
-for cand in "$ROOT/scripts/run_precommit.py" "$ROOT/.codingskills/scripts/run_precommit.py"; do
+for cand in "$ROOT/scripts/run_precommit.py" "$ROOT/.cardsmith/scripts/run_precommit.py"; do
   if [ -f "$cand" ]; then
     RUNNER="$cand"
     break

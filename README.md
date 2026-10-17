@@ -1,4 +1,4 @@
-# codingskills
+# cardsmith
 
 一套**卡片驱动**的编码规范强制套件。给 AI 编码助手装的规矩，不能只写在文档里 ——
 必须由程序在编辑后、提交前真的查。
@@ -23,7 +23,7 @@
 
 ```bash
 # 1. 克隆
-git clone https://github.com/mkkluo/codingskills.git && cd codingskills
+git clone https://github.com/mkkluo/cardsmith.git && cd cardsmith
 
 # 2. 自检：确认套件自身没有漂移（14 项三方对账）
 python scripts/check.py
@@ -35,7 +35,7 @@ python scripts/install.py --project /path/to/your-project --with-git-hook
 python scripts/install.py --project /path/to/your-project --dry-run
 ```
 
-装完后运行时目录落在你项目里（默认名 `codingskills`，前缀可配），
+装完后运行时目录落在你项目里（默认名 `cardsmith`，前缀可配），
 `git config core.hooksPath` 指向 `githooks`。
 在项目里改一个源文件、或直接 `git commit` 一次，就能看到守卫在跑。
 
@@ -43,8 +43,8 @@ python scripts/install.py --project /path/to/your-project --dry-run
 直接改 JSON，再用 `--update-baseline` 收紧：
 
 ```bash
-python .codingskills/tools/check_size_naming.py \
-  --rules .codingskills/rules/file-size-and-naming-guard.json \
+python .cardsmith/tools/check_size_naming.py \
+  --rules .cardsmith/rules/file-size-and-naming-guard.json \
   --all --update-baseline        # --all 不能省：它写入本次扫描到的全部违规
 ```
 
@@ -160,7 +160,7 @@ blocking 用 —— `stale-import-guard` 首发误报率 64%（把「修复记�
 比没有守卫更糟：它给出「已检查过」的错觉。
 
 **版本号的唯一用途是运行时对账。** `hooks/run.py` 拿项目里
-`.codingskills/runtime-state.json` 的 `suite_version` 与套件根 `VERSION` 比对，
+`.cardsmith/runtime-state.json` 的 `suite_version` 与套件根 `VERSION` 比对，
 不一致就在 stderr 提示重装。改了 `tools/` `rules/` `hooks/` 的行为就必须 bump
 `VERSION` 并补 CHANGELOG —— 只改代码不升版本，对账永远报「一致」，
 项目里跑的还是旧工具。
@@ -169,7 +169,7 @@ blocking 用 —— `stale-import-guard` 首发误报率 64%（把「修复记�
 
 ## English
 
-**codingskills** is a card-driven coding-standards enforcement suite. Rules for AI
+**cardsmith** is a card-driven coding-standards enforcement suite. Rules for AI
 coding assistants must not live only in docs — they have to actually run at edit
 time and before commits.
 

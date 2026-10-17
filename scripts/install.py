@@ -9,7 +9,7 @@
        让 WorkBuddy 能加载这些技能。用户级，装一次全局可用。
 
     ② 装运行时（--project <路径>）
-       运行时 → <项目>/.codingskills/
+       运行时 → <项目>/.cardsmith/
          tools/  rules/  hooks/  scripts/
        并把 hooks 配置**合并**进 <项目>/.codebuddy/settings.json
        让这个项目里的编辑动作能触发卡片声明的检查。
@@ -47,9 +47,9 @@ import git_hooks  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SKILLS_TARGET = Path.home() / ".workbuddy" / "skills"
-RUNTIME_DIRNAME = ".codingskills"
+RUNTIME_DIRNAME = ".cardsmith"
 SETTINGS_REL = Path(".codebuddy") / "settings.json"
-STATE_FILE = ".codingskills-state.json"
+STATE_FILE = ".cardsmith-state.json"
 
 RUNTIME_ITEMS = ("tools", "rules")
 
@@ -240,7 +240,7 @@ def install_runtime(project: Path, cards: "list[dict]", use_link: bool, dry: boo
     ):
         if rel not in generated:
             continue
-        # README 落为运行时根的 README.md —— 换机器克隆项目后，.codingskills/ 不再是黑盒
+        # README 落为运行时根的 README.md —— 换机器克隆项目后，.cardsmith/ 不再是黑盒
         dest = runtime / ("README.md" if rel == "RUNTIME-README.md" else rel)
         if dry:
             actions.append(f"[+] {rel} → {dest}（前缀 {prefix}）")

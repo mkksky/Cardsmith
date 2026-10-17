@@ -11,10 +11,10 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 
 # 两个可能的落点：
 #   套件自身仓库      → <仓库>/scripts/run_precommit.py
-#   装到业务项目      → <项目>/.codingskills/scripts/run_precommit.py
+#   装到业务项目      → <项目>/.cardsmith/scripts/run_precommit.py
 # 早期版本只找了前者，装到项目后钩子静默跳过 —— 看起来装了，实际没检查。
 RUNNER=""
-for cand in "$ROOT/scripts/run_precommit.py" "$ROOT/.codingskills/scripts/run_precommit.py"; do
+for cand in "$ROOT/scripts/run_precommit.py" "$ROOT/.cardsmith/scripts/run_precommit.py"; do
   if [ -f "$cand" ]; then
     RUNNER="$cand"
     break

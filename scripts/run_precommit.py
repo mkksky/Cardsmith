@@ -27,14 +27,14 @@ TOOL_TIMEOUT = 180
 
 
 def find_root() -> Path:
-    """运行时根：scripts/ 的上一级。装到项目后是 <项目>/.codingskills。"""
+    """运行时根：scripts/ 的上一级。装到项目后是 <项目>/.cardsmith。"""
     return Path(__file__).resolve().parent.parent
 
 
 def project_root() -> Path:
     """被检查文件所属的项目根。与运行时根不是一个东西，见 hooks/run.py 的同名函数。"""
     runtime = find_root()
-    if runtime.name == ".codingskills":
+    if runtime.name == ".cardsmith":
         return runtime.parent
     return runtime
 
@@ -100,7 +100,7 @@ def main() -> int:
     if event == "commit-msg":
         # git 把 message 文件路径作为 $1 传给钩子，这里转成工具参数。
         # 必须转成**绝对路径**：git 传进来的是相对仓库根的 .git/COMMIT_EDITMSG，
-        # 而下面 run() 把工具的工作目录设成了运行时根（<项目>/.codingskills），
+        # 而下面 run() 把工具的工作目录设成了运行时根（<项目>/.cardsmith），
         # 相对路径在那里解析不到 → 工具报退出码 2 → 每次提交都被阻断。
         # （2026-09-25 实测：git 传 $1=[.git/COMMIT_EDITMSG]，钩子 cwd=仓库根）
         if not event_args:

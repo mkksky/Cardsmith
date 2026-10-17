@@ -97,6 +97,6 @@ python tools/check_doc_sync.py --selftest    # 应 13/13 全绿
 本文与上表中的 `tools/`、`rules/` 路径一律**相对运行时根**，不是相对项目根：
 
 - 在套件仓库内维护：运行时根 = 仓库根
-- 在已安装的项目里使用：运行时根 = `<项目>/.codingskills/` —— 先 `cd .codingskills` 再照抄命令，或把路径写成 `.codingskills/tools/...`
+- 在已安装的项目里使用：运行时根 = `<项目>/.cardsmith/` —— 先 `cd .cardsmith` 再照抄命令，或把路径写成 `.cardsmith/tools/...`
 
 <!-- 本文件由 scripts/build.py 从 cards/doc-sync-guard.md 生成，请勿直接修改。 -->
