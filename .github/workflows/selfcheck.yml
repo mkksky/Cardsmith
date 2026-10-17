@@ -1,0 +1,47 @@
+name: 自检
+
+# 这套套件卖点是「程序真的在查」，那就得让检查在每次 push 时真的跑一遍，
+# 而不是只在作者本机跑过。任一环节红即视为失败。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selfcheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # README 声明支持 3.8+，两端都要真跑过
+        python-version: ['3.8', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 套件三方对账（卡片 ↔ 生成物 ↔ 磁盘）
+        run: python scripts/check.py
+
+      - name: YAML 解析器自测
+        run: python scripts/yamlmini_selftest.py
+
+      - name: 钩子合并自测
+        run: python scripts/git_hooks_selftest.py
+
+      - name: 导入收集器自测
+        run: python scripts/import_collectors_selftest.py
+
+      - name: 密钥守卫自测
+        run: python tools/check_secrets_selftest.py
+
+      - name: 文档同步守卫自测
+        run: python tools/doc_sync_selftest.py
+
+      - name: 全守卫体检
+        run: python tools/release_checklist.py --rules rules/release-checklist.json
