@@ -10,6 +10,24 @@
 
 ---
 
+## 0.8.0
+
+**项目更名：codingskills → cardsmith**
+
+- 28 个文件 97 处，涵盖代码、规则、卡片、文档与运行时路径
+- **升级到 0.8.0 而非 0.7.2**：装到项目里的运行时目录名从 `.codingskills/`
+  变成 `.cardsmith/`，旧项目原地升级会找不到工具。**从 0.7.x 升上来的项目
+  必须先跑 `install.py --uninstall-git-hook` 再重装**，旧的 `.codingskills/`
+  目录不会自动消失
+- 改名涉及三处容易漏的运行时根判断（`hooks/run.py`、`run_precommit.py`、
+  `release_checklist.py` 里 `runtime.name == ".cardsmith"`），
+  以及 `build.py` / `install.py` 各定义一份的 `RUNTIME_DIRNAME`
+- 更名依据：这批工具的名字赛道很挤 —— Ratchet、Writ、Driftless、Lattice、
+  Vigil、Portcullis、Palisade 都有定位相近的开源项目。选 cardsmith 是因为
+  「卡片驱动」是竞品普遍缺失的机制差异点
+
+---
+
 ## 0.7.1
 
 **修 stale-import-guard 的注释误报：JS/TS 导入收集先剥注释**
