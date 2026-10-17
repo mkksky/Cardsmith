@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "description": "分层依赖方向约束。规则：外层的 rank 大于内层，只允许外层 import 内层；反向（内层 import 外层）即违规。",
+  "layers": [
+    {
+      "name": "domain",
+      "rank": 0,
+      "patterns": ["**/domain/**", "**/entities/**", "**/model/**"]
+    },
+    {
+      "name": "application",
+      "rank": 1,
+      "patterns": ["**/application/**", "**/service/**", "**/usecase/**"]
+    },
+    {
+      "name": "infrastructure",
+      "rank": 2,
+      "patterns": ["**/infrastructure/**", "**/repository/**", "**/persistence/**", "**/dao/**"]
+    },
+    {
+      "name": "presentation",
+      "rank": 3,
+      "patterns": ["**/api/**", "**/controller/**", "**/web/**", "**/handler/**"]
+    }
+  ],
+  "policy": "outer-may-depend-on-inner",
+  "exempt": {
+    "type_checking_blocks": true,
+    "function_level_imports": false
+  },
+  "skip_paths": [
+    "**/tests/**",
+    "**/test/**",
+    "**/migrations/**",
+    "**/__pycache__/**"
+  ]
+}

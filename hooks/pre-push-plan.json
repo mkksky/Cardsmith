@@ -1,0 +1,13 @@
+{
+  "description": "由 scripts/build.py 生成，勿手改。.githooks/pre-push 按 blocking 决定是否中断。",
+  "tools": [
+    {
+      "id": "sync-state",
+      "script": "tools/check_sync_state.py",
+      "args": [],
+      "inputs": "none",
+      "blocking": true,
+      "card": "multi-machine-sync-guard"
+    }
+  ]
+}

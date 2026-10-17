@@ -1,0 +1,102 @@
+---
+name: secrets-guard
+stage: coding
+version: 1
+description: >-
+  密钥防泄守卫：pre-commit 扫描暂存文件，私钥块、云厂商 token 等已知格式与
+  .env/密钥文件本身被暂存 → 高危阻断；敏感变量名 + 密钥形态字符串的赋值 →
+  可疑仅提醒不拦截。报告打码，基线存哈希不存原文。当用户抱怨「密钥不小心
+  提交了」「.env 被推上去了」「token 泄露要换」「想让仓库里别再出现真密钥」，
+  或要给项目加密钥门禁时使用。触发词：密钥泄露、secret、token、api key、
+  私钥、.env、凭据、secrets、credential、key leak。
+tools:
+  - id: secrets
+    script: tools/check_secrets.py
+    args: ["--rules", "rules/secrets-guard.json"]
+    inputs: staged-files
+    baseline: true
+    exit: "0=通过或仅软提醒 1=高危密钥 2=配置错误"
+    desc: 扫描暂存文件里的私钥、云厂商 token、密钥形态赋值；高危阻断，可疑仅提醒
+hooks:
+  - event: PostToolUse
+    matcher: "Write|Edit"
+    tools: [secrets]
+    blocking: false
+    timeout: 15
+  - event: pre-commit
+    tools: [secrets]
+    blocking: true
+rules:
+  - id: secrets-hard
+    kind: secrets
+    severity: error
+    source: rules/secrets-guard.json
+  - id: secrets-soft
+    kind: secrets
+    severity: warn
+    source: rules/secrets-guard.json
+---
+
+# 密钥防泄守卫
+
+密钥进了 git 历史就是永久的：事后删除、改密码都救不回来，任何人拿到仓库都能从历史提交里翻出来。这张卡把拦截放在提交前——最后一道密钥出不去的门。
+
+## 何时使用
+
+- 写代码时把测试用的真密钥顺手写死在源码里，怕忘了删
+- `.env`、`*.pem`、`id_rsa` 这类文件被 `git add` 了
+- 接手别人的项目，想先摸底看仓库里有没有存量密钥（`--all` + 基线）
+- 私有仓库也要装：令牌一对多仓库，且仓库将来可能共享、公开、换机器
+
+## 核心方法
+
+### 两级严重度，不给 --no-verify 找理由
+
+**hard（阻断）**只放零误报的格式：私钥块、云厂商 token 固定前缀、敏感文件本身被暂存。命中这些不存在「其实没事」。**soft（提醒）**是敏感变量名 + 密钥形态字符串的赋值——可能真是密钥，也可能是测试假数据，拦了会误伤，提醒让人自己看一眼。这个分层是给「个人项目不想被打断」的场景准备的：日常提交零打扰，致命的照样拦。
+
+### 报告打码，基线存哈希
+
+工具的任何输出（终端、stderr 回填、基线文件）都只含**前 3 位打码预览**和 `sha1` 前 8 位的哈希键——守卫本身永远不会把密钥明文写进第二个地方。修掉存量后重跑 `--update-baseline` 收紧。
+
+### 自检文件必须豁免自己
+
+`check_secrets_selftest.py` 里的假密钥是故意的测试样本，规则 `skip_paths` 已把
+它排除——否则套件自己的 pre-commit 会把自己拦下来。给新项目配规则时，测试
+样本文件同理。
+
+## 常见坑
+
+| 坑 | 症状 | 解法 |
+|---|---|---|
+| **存量密钥全量阻断** | 接老项目第一次提交被几百条拦死 | 先 `--all` 摸底 → `--update-baseline` 登记存量 → 新增才阻断 |
+| **示例假 key 被拦** | 文档里的 `api_key = "your_xxx"` 没事，但假真值被 soft 提醒 | 确证无害的值加进 `allow_values`；占位符词表已内置 your_/xxx/test |
+| **soft 提醒刷屏** | 代码里大量 `password = 短字符串` 被提醒 | soft 要求值 ≥10 位且有字母+数字或足够长；仍嫌吵就把该字段名场景写进 `allow_values` |
+| **base64/拆分存储的密钥** | 明明有密钥但扫描不报 | 形态匹配抓不到变形存储——纪律兜底：密钥只走环境变量或 .env，且 .env 永不入库 |
+| **文档里的真实密钥** | 只想着查代码，忘了 README/issue 导出 | 扫描不分文件类型，markdown 一样查 |
+
+## 实施步骤
+
+1. 存量项目先 `--all` 摸底，看真实泄露面
+2. `--update-baseline` 登记存量（hard），修一个收紧一次
+3. 接钩子：编辑后提醒（不阻断）、提交前阻断
+4. 把「密钥只走环境变量」写进项目约定——门禁是防线，不是赦免
+
+## 验证
+
+```bash
+# 自检（11 用例）
+python tools/check_secrets.py --selftest    # 应 11/11 全绿
+
+# 端到端：造一个真形态的假密钥，确认被拦
+# （ghp_ 后要拼满 36 位字母数字；这里用拼接写法，防止卡片自己被自家守卫拦下）
+printf 't = "ghp_" + "A1b2C3d4" * 4 + "A1b2"\n' > /tmp/s.py
+python tools/check_secrets.py --rules rules/secrets-guard.json --files /tmp/s.py
+echo "退出码=$?"   # 应为 1
+rm /tmp/s.py
+```
+
+## 注意
+
+- soft 层**永远不阻断**（退出码 0）——这是设计，不是漏
+- 报告只到「哪个文件哪行什么形态」，不打印密钥明文
+- 规则改动要连着卡片 `version` 一起加一

@@ -1,0 +1,67 @@
+#!/bin/sh
+# pre-push 门禁 —— 机制与 .githooks/pre-commit 完全相同，差异只有两点：
+#   1. 时机：push 之前。此时检查「本地与远端的分叉状态」最合适 ——
+#      反正 push 本身也要联网，这里做 ls-remote 对撞不会增加失败模式
+#   2. 不接收文件列表：检查对象是仓库同步状态，不是文件内容
+# 版本化存放与解释器选择的理由见 .githooks/pre-commit 头注释，不在此重复。
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+RUNNER=""
+for cand in "$ROOT/scripts/run_precommit.py" "$ROOT/.codingskills/scripts/run_precommit.py"; do
+  if [ -f "$cand" ]; then
+    RUNNER="$cand"
+    break
+  fi
+done
+
+if [ -z "$RUNNER" ]; then
+  echo "pre-push: 找不到 run_precommit.py，跳过检查"
+  exit 0
+fi
+
+PY=""
+
+pick() {
+  [ -n "$PY" ] && return 0
+  [ -n "$1" ] || return 0
+  if command -v "$1" >/dev/null 2>&1; then
+    "$1" -c 'import sys' >/dev/null 2>&1 && PY="$1"
+  elif [ -x "$1" ] && "$1" -c 'import sys' >/dev/null 2>&1; then
+    PY="$1"
+  fi
+  return 0
+}
+
+pick "$PRECOMMIT_PYTHON"
+pick python3
+pick python
+
+if [ -z "$PY" ]; then
+  for d in "$HOME"/.workbuddy/binaries/python/versions/*/python.exe; do
+    [ -x "$d" ] && "$d" -c 'import sys' >/dev/null 2>&1 && PY="$d"
+  done
+fi
+
+if [ -z "$PY" ]; then
+  echo "pre-push: 未找到可用的 Python 解释器，跳过检查"
+  exit 0
+fi
+
+"$PY" "$RUNNER" pre-push
+RC=$?
+
+# ── 链式接力：宿主钩子 ──
+# 机制见 .githooks/pre-commit 尾部注释。pre-push 的 remote/url 参数与 stdin 原样透传。
+if [ "$RC" -eq 0 ] && [ -f "$ROOT/.githooks/legacy-hook" ]; then
+  LEGACY=$(sed -n 's/.*"pre-push"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.githooks/legacy-hook")
+  if [ -n "$LEGACY" ] && [ -f "$ROOT/$LEGACY" ]; then
+    if [ -x "$ROOT/$LEGACY" ]; then
+      ( cd "$ROOT" && "./$LEGACY" "$@" )
+    else
+      ( cd "$ROOT" && sh "$LEGACY" "$@" )
+    fi
+    RC=$?
+  fi
+fi
+exit $RC

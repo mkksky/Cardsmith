@@ -1,0 +1,8 @@
+{
+  "description": "release-checklist 聚合规则：从 hooks/registry.json 取全部工具跑 --all，exclude 里的不跑。",
+  "exclude": [
+    "commit-msg",
+    "sync-state"
+  ],
+  "timeout_seconds": 120
+}

@@ -1,0 +1,26 @@
+{
+  "description": "根因协议的机器规则。builtin 是代码内置的缩进感知检测器（正则做不准）；patterns 是行级正则，可按项目增删。改完跑 --selftest 验证。",
+  "extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".vue"],
+  "skip_paths": [
+    "**/*.generated.*",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/dist/**",
+    "**/migrations/**",
+    "**/*_selftest.py",
+    "**/check_debug_smells.py"
+  ],
+  "builtin": ["except-pass"],
+  "patterns": [
+    {
+      "id": "bare-except",
+      "regex": "^\\s*except\\s*:\\s*(?:#.*)?$",
+      "why": "裸 except 连 KeyboardInterrupt / SystemExit 一起吞，Ctrl+C 都杀不掉"
+    },
+    {
+      "id": "empty-catch",
+      "regex": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*\\}",
+      "why": "空 catch 块，JS/Java 同款的错误黑洞"
+    }
+  ]
+}

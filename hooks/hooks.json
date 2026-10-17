@@ -1,0 +1,60 @@
+{
+  "description": "由 scripts/build.py 从 cards/ 生成，勿手改。改绑定关系请改卡片后重跑 build。",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" protected-paths",
+            "description": "阻断受保护路径（迁移脚本等）下的任何暂存变更",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" doc-sync",
+            "description": "查文档引用的路径是否存在、API 文档声明的方法在源码里是否存在",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" size-naming",
+            "description": "检查文件行数与文件名命名规范",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" format-lint",
+            "description": "调用本机已装的 ruff / ruff-format / eslint，统一到套件退出码",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" import-direction",
+            "description": "用 AST 解析各层文件的导入，判断是否违反分层依赖方向",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" debug-smells",
+            "description": "抓裸 except / except-pass / 空 catch 等吞错误的写法",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" secrets",
+            "description": "扫描暂存文件里的私钥、云厂商 token、密钥形态赋值；高危阻断，可疑仅提醒",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" stale-imports",
+            "description": "解析导入说明符，校验目标模块在仓库内真实存在",
+            "timeout": 15
+          }
+        ],
+        "matcher": "Write|Edit"
+      }
+    ]
+  }
+}

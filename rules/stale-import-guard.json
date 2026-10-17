@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "description": "失效导入路径检查默认规则。项目需按自身布局定制：packages 填 Python 顶层包白名单（为空则不查 Python 绝对导入，相对导入仍查）；javascript.aliases 填构建别名映射（键以 / 结尾、值为相对项目根的目录），为空则只查 ./ ../ 相对导入；roots 是 Python 导入解析根。已有文件的 packages/aliases/skip_paths 归项目所有，重装不覆盖。",
+  "packages": [],
+  "roots": [
+    "."
+  ],
+  "check_relative": true,
+  "extensions": [
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    ".vue"
+  ],
+  "javascript": {
+    "aliases": {},
+    "extensions": [
+      ".js",
+      ".jsx",
+      ".ts",
+      ".tsx",
+      ".mjs",
+      ".cjs",
+      ".vue"
+    ]
+  },
+  "skip_paths": [
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/site-packages/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/migrations/**"
+  ]
+}

@@ -1,0 +1,80 @@
+#!/bin/sh
+# 提交前门禁 —— 执行体在 scripts/run_precommit.py
+#
+# 版本化存放：本仓库用 `git config core.hooksPath .githooks` 指向这里，
+# 所以钩子随仓库走，克隆/换机器配一条命令就生效，内容也能被 review。
+#
+# 指定解释器：export PRECOMMIT_PYTHON=/path/to/python
+# 确知无碍要跳过：git commit --no-verify
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+# 两个可能的落点：
+#   套件自身仓库      → <仓库>/scripts/run_precommit.py
+#   装到业务项目      → <项目>/.codingskills/scripts/run_precommit.py
+# 早期版本只找了前者，装到项目后钩子静默跳过 —— 看起来装了，实际没检查。
+RUNNER=""
+for cand in "$ROOT/scripts/run_precommit.py" "$ROOT/.codingskills/scripts/run_precommit.py"; do
+  if [ -f "$cand" ]; then
+    RUNNER="$cand"
+    break
+  fi
+done
+
+if [ -z "$RUNNER" ]; then
+  echo "pre-commit: 找不到 run_precommit.py，跳过检查"
+  exit 0
+fi
+
+PY=""
+
+pick() {
+  [ -n "$PY" ] && return 0
+  [ -n "$1" ] || return 0
+  if command -v "$1" >/dev/null 2>&1; then
+    # 必须实际执行一次版本探测才采纳 —— 只看 command -v 会命中
+    # Windows 的 Microsoft Store 占位程序（存在但跑不起来）
+    "$1" -c 'import sys' >/dev/null 2>&1 && PY="$1"
+  elif [ -x "$1" ] && "$1" -c 'import sys' >/dev/null 2>&1; then
+    PY="$1"
+  fi
+  return 0
+}
+
+pick "$PRECOMMIT_PYTHON"
+pick python3
+pick python
+
+# 本机可能没有系统级 Python，兜底扫 WorkBuddy 托管解释器（取最高版本）。
+# sort -V 是数值版排序：3.13.12 > 3.13.0、3.10 > 3.9，纯字典序会把 3.9 排在 3.10 后面。
+if [ -z "$PY" ]; then
+  for d in $(ls -1d "$HOME"/.workbuddy/binaries/python/versions/*/python.exe 2>/dev/null | sort -V); do
+    [ -x "$d" ] && "$d" -c 'import sys' >/dev/null 2>&1 && PY="$d"
+  done
+fi
+
+if [ -z "$PY" ]; then
+  echo "pre-commit: 未找到可用的 Python 解释器，跳过检查"
+  echo "            需要检查请指定：export PRECOMMIT_PYTHON=/path/to/python"
+  exit 0
+fi
+
+"$PY" "$RUNNER"
+RC=$?
+
+# ── 链式接力：宿主钩子 ──
+# core.hooksPath 被 .githooks 接管后，项目自带的钩子不再被 git 调用。
+# install.py 安装时若探测到宿主钩子，路径会记录在 .githooks/legacy-hook；
+# 这里在套件检查通过后接力执行，聚合退出码 —— 门禁叠加，谁也不顶掉谁。
+if [ "$RC" -eq 0 ] && [ -f "$ROOT/.githooks/legacy-hook" ]; then
+  LEGACY=$(sed -n 's/.*"pre-commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.githooks/legacy-hook")
+  if [ -n "$LEGACY" ] && [ -f "$ROOT/$LEGACY" ]; then
+    if [ -x "$ROOT/$LEGACY" ]; then
+      ( cd "$ROOT" && "./$LEGACY" )
+    else
+      ( cd "$ROOT" && sh "$LEGACY" )
+    fi
+    RC=$?
+  fi
+fi
+exit $RC

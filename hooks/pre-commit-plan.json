@@ -1,0 +1,93 @@
+{
+  "description": "由 scripts/build.py 生成，勿手改。.githooks/pre-commit 按 blocking 决定是否中断。",
+  "tools": [
+    {
+      "id": "protected-paths",
+      "script": "tools/check_protected_paths.py",
+      "args": [
+        "--rules",
+        "rules/db-migration-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "db-migration-guard"
+    },
+    {
+      "id": "doc-sync",
+      "script": "tools/check_doc_sync.py",
+      "args": [
+        "--rules",
+        "rules/doc-sync-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "doc-sync-guard"
+    },
+    {
+      "id": "size-naming",
+      "script": "tools/check_size_naming.py",
+      "args": [
+        "--rules",
+        "rules/file-size-and-naming-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "file-size-naming-guard"
+    },
+    {
+      "id": "format-lint",
+      "script": "tools/check_format_lint.py",
+      "args": [
+        "--rules",
+        "rules/format-lint-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "format-lint-guard"
+    },
+    {
+      "id": "import-direction",
+      "script": "tools/check_import_direction.py",
+      "args": [
+        "--rules",
+        "rules/layered-architecture-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "layered-architecture-guard"
+    },
+    {
+      "id": "debug-smells",
+      "script": "tools/check_debug_smells.py",
+      "args": [
+        "--rules",
+        "rules/root-cause-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "root-cause-protocol"
+    },
+    {
+      "id": "secrets",
+      "script": "tools/check_secrets.py",
+      "args": [
+        "--rules",
+        "rules/secrets-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "secrets-guard"
+    },
+    {
+      "id": "stale-imports",
+      "script": "tools/check_stale_imports.py",
+      "args": [
+        "--rules",
+        "rules/stale-import-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "stale-import-guard"
+    }
+  ]
+}

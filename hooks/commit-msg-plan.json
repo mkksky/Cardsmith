@@ -1,0 +1,16 @@
+{
+  "description": "由 scripts/build.py 生成，勿手改。.githooks/commit-msg 按 blocking 决定是否中断。",
+  "tools": [
+    {
+      "id": "commit-msg",
+      "script": "tools/check_commit_msg.py",
+      "args": [
+        "--rules",
+        "rules/commit-message-guard.json"
+      ],
+      "inputs": "none",
+      "blocking": true,
+      "card": "commit-message-guard"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "description": "格式化与 lint 工具链。本机装了哪个就跑哪个，没装的跳过而不是报错 —— 因为缺工具而卡住提交，只会逼出 --no-verify 习惯。",
+  "tools": [
+    {
+      "name": "ruff",
+      "extensions": [".py"],
+      "command": ["ruff", "check", "--no-fix"],
+      "hint": "pip install ruff"
+    },
+    {
+      "name": "ruff-format",
+      "extensions": [".py"],
+      "command": ["ruff", "format", "--check", "--diff"],
+      "hint": "pip install ruff"
+    },
+    {
+      "name": "eslint",
+      "extensions": [".js", ".ts", ".vue"],
+      "command": ["npx", "--no-install", "eslint"],
+      "hint": "npm i -D eslint"
+    }
+  ],
+  "skip_paths": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/__pycache__/**",
+    "**/migrations/**",
+    "**/*.min.js"
+  ]
+}

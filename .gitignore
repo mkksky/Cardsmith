@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 安装状态文件（install.py 写在 skills 目标目录，如 ~/.workbuddy/skills/，
+# 名为 .codingskills-state.json —— 不落在本仓库，这里不再单列）
+# 工作记忆：本机工作日志，不随仓库跨机同步
+/.workbuddy/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 打包产物
+*.zip
+dist/
+build/

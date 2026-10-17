@@ -1,0 +1,101 @@
+{
+  "description": "由 scripts/build.py 生成，勿手改。hooks/run.py 按本表定位脚本。",
+  "tools": {
+    "commit-msg": {
+      "card": "commit-message-guard",
+      "script": "tools/check_commit_msg.py",
+      "args": [
+        "--rules",
+        "rules/commit-message-guard.json"
+      ],
+      "inputs": "none"
+    },
+    "protected-paths": {
+      "card": "db-migration-guard",
+      "script": "tools/check_protected_paths.py",
+      "args": [
+        "--rules",
+        "rules/db-migration-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "doc-sync": {
+      "card": "doc-sync-guard",
+      "script": "tools/check_doc_sync.py",
+      "args": [
+        "--rules",
+        "rules/doc-sync-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "size-naming": {
+      "card": "file-size-naming-guard",
+      "script": "tools/check_size_naming.py",
+      "args": [
+        "--rules",
+        "rules/file-size-and-naming-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "format-lint": {
+      "card": "format-lint-guard",
+      "script": "tools/check_format_lint.py",
+      "args": [
+        "--rules",
+        "rules/format-lint-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "import-direction": {
+      "card": "layered-architecture-guard",
+      "script": "tools/check_import_direction.py",
+      "args": [
+        "--rules",
+        "rules/layered-architecture-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "sync-state": {
+      "card": "multi-machine-sync-guard",
+      "script": "tools/check_sync_state.py",
+      "args": [],
+      "inputs": "none"
+    },
+    "release-checklist": {
+      "card": "release-checklist",
+      "script": "tools/release_checklist.py",
+      "args": [
+        "--rules",
+        "rules/release-checklist.json"
+      ],
+      "inputs": "none"
+    },
+    "debug-smells": {
+      "card": "root-cause-protocol",
+      "script": "tools/check_debug_smells.py",
+      "args": [
+        "--rules",
+        "rules/root-cause-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "secrets": {
+      "card": "secrets-guard",
+      "script": "tools/check_secrets.py",
+      "args": [
+        "--rules",
+        "rules/secrets-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "stale-imports": {
+      "card": "stale-import-guard",
+      "script": "tools/check_stale_imports.py",
+      "args": [
+        "--rules",
+        "rules/stale-import-guard.json"
+      ],
+      "inputs": "staged-files"
+    }
+  }
+}

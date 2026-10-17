@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "description": "文档同步守卫的机器规则。doc_roots 是要查的文档白名单（声明了才查，防止历史报告淹没）；source_roots 是路径引用的备选解析根（源码不在仓库根下时用）；cf_doc_bases 让 docs/<doc_base>/<fn>/ 下的文档把 cloudfunctions/<fn>/ 之类的邻域加入引用解析基（典型：云函数 README 写函数内相对路径）；api_docs 声明「这份 API 文档的签名要在哪些源码目录里找得到」。allow_refs 是精确白名单（整串相等才放行）；allow_ref_patterns 是形态白名单（正则 fullmatch），用于放行「长得像路径但不是路径」的固定写法，如价格单位 `元/㎡`、纯数字比 `28/24/19`、不入库的本地证据目录 `.local-evidence/`。改完跑 --selftest 验证。",
+  "doc_roots": [
+    "README.md",
+    "docs/CARD-SPEC.md",
+    "docs/CONVENTIONS.md",
+    "docs/CASES.md",
+    "docs/HOOKS-VERIFY.md"
+  ],
+  "doc_extensions": [".md"],
+  "source_roots": [],
+  "cf_doc_bases": [],
+  "path_suffixes": [
+    ".py",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".txt",
+    ".sh",
+    ".bat",
+    ".ps1"
+  ],
+  "skip_paths": [
+    "**/.codingskills/**",
+    "**/node_modules/**",
+    "**/__pycache__/**"
+  ],
+  "allow_refs": [
+    ".workbuddy/settings.json",
+    ".workbuddy/",
+    ".codebuddy/settings.json",
+    ".codebuddy/",
+    ".codingskills/runtime-state.json",
+    ".git/hooks/pre-commit",
+    ".git/COMMIT_EDITMSG",
+    "X:/n"
+  ],
+  "allow_ref_patterns": [],
+  "check_bare_names": false,
+  "skip_symbols": [
+    "print",
+    "open",
+    "len",
+    "range",
+    "str",
+    "int",
+    "float",
+    "bool",
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "type",
+    "isinstance",
+    "getattr",
+    "setattr",
+    "super",
+    "enumerate",
+    "zip",
+    "sorted",
+    "Exception",
+    "ValueError",
+    "KeyError",
+    "OSError"
+  ],
+  "api_docs": []
+}

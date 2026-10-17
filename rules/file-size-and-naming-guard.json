@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "文件体积与命名规范。超限不算错误本身，它是「这个文件承担了两件事」的信号。",
+  "file_lines": {
+    "default": 500,
+    "overrides": {
+      "*.md": null,
+      "*.json": null,
+      "*.yaml": null,
+      "*.yml": null,
+      "*.vue": 600,
+      "*.java": 800,
+      "*.js": 600,
+      "*.ts": 600
+    }
+  },
+  "naming": {
+    "*.py": "^[a-z][a-z0-9_]*$",
+    "*.java": "^[A-Z][A-Za-z0-9]*$",
+    "*.vue": "^[A-Z][A-Za-z0-9]*$",
+    "*.ts": "^[a-zA-Z][A-Za-z0-9_.-]*$"
+  },
+  "skip_paths": [
+    "**/migrations/**",
+    "**/__pycache__/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/vendor/**",
+    "**/*.min.js",
+    "**/*.generated.*"
+  ]
+}

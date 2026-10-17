@@ -1,0 +1,10 @@
+{
+  "description": "commit message 规范。类型列表、主题行长度、跳过模式都可按项目调整。subject 格式固定为 <type>(<scope>): <描述>（Conventional Commits 子集）。",
+  "types": ["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert"],
+  "max_subject_len": 72,
+  "skip_patterns": [
+    "^Merge ",
+    "^Revert ",
+    "^Initial commit"
+  ]
+}
