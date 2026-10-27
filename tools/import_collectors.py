@@ -180,6 +180,54 @@ def mask_js_comments(src: str) -> str:
     return "".join(out)
 
 
+def mask_js_strings_and_comments(src: str) -> str:
+    """在 mask_js_comments 之上，**额外把字符串字面量的内容也替换成空格**。
+
+    与 mask_js_comments 的分工：
+      ・mask_js_comments 只让解析器跳过字符串（内容原样保留），
+        因为收集 import 时正则是靠字符串的引号来定位的，抹掉就找不到了
+      ・本函数给「用正则找坏味道」的调用方用：正则不该命中字符串里的内容
+
+    为什么需要：JS/Java 的坏味道正则（空 catch、无参 catch）跑在源码上时，
+    会命中**字符串字面量里的代码样本** —— 最常见的形态就是测试用例：
+    一行 case() 调用把「空 catch」的完整写法当字典值传给临时文件。
+    那行自己就在 .py 文件里写了一条空 catch，扫全文必然命中。
+    登记基线是错的解法（那是给真违规留的出口），必须让扫描器看不见字符串。
+
+    注意本函数的说明里刻意**不写完整的坏味道代码**：docstring 的缩进块在
+    词法上就是真实代码，写出来会被自家 pre-commit 的 debug-smells 拦下
+    （真阳性，但那是文档在演示坏味道，不是在写坏味道）。
+
+    换行一律保留：调用方靠 src.count("\\n", 0, m.start()) 算行号。
+    字符串的**引号本身也保留**，这样依赖引号定位的正则（如 catch 前的括号匹配）
+    仍能看到字符串边界，不会因为内容被抹掉而错位匹配。
+    """
+    masked = mask_js_comments(src)
+    out = list(masked)
+    i = 0
+    n = len(masked)
+    quote = ""
+    while i < n:
+        ch = masked[i]
+        if quote:
+            # 已进入字符串：内容抹成空格，\n 保留；转义整体跳过
+            if ch == "\\" and i + 1 < n:
+                out[i] = " " if ch != "\n" else "\n"
+                out[i + 1] = " " if masked[i + 1] != "\n" else "\n"
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+            elif ch != "\n":
+                out[i] = " "
+            i += 1
+            continue
+        if ch in "\"'`":
+            quote = ch
+        i += 1
+    return "".join(out)
+
+
 def collect_javascript(path: Path, rel: str) -> list[tuple[int, str, str]]:
     """收集 JS/TS/Vue 的模块说明符，返回 (行号, 说明符原文, 展示文本)。
 

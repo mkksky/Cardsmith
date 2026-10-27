@@ -1,26 +1,47 @@
 {
-  "version": 1,
-  "description": "分层依赖方向约束。规则：外层的 rank 大于内层，只允许外层 import 内层；反向（内层 import 外层）即违规。",
+  "version": 2,
+  "description": "分层依赖方向约束。规则：外层的 rank 大于内层，只允许外层 import 内层；反向（内层 import 外层）即违规。本项目采用 Spring 三层架构（controller → service → repository → entity），因此 repository 排在 service 之内：service 依赖 repository 是标准写法，不是跨层违规。Clean Architecture 那套「端口在 domain、实现在 infrastructure」需要 service 不依赖 repository，本项目没有走那条路，硬套只会得到 76 条假警报。project_packages 限定只对项目自身代码判层——jakarta.persistence.* / org.springframework.dao.* 这类库名会被 **/persistence/** 这类 glob 误匹配成层路径。",
+  "project_packages": [
+    "com.congge"
+  ],
   "layers": [
     {
       "name": "domain",
       "rank": 0,
-      "patterns": ["**/domain/**", "**/entities/**", "**/model/**"]
-    },
-    {
-      "name": "application",
-      "rank": 1,
-      "patterns": ["**/application/**", "**/service/**", "**/usecase/**"]
+      "patterns": ["**/domain/**", "**/entities/**", "**/entity/**", "**/model/**", "**/dto/**"]
     },
     {
       "name": "infrastructure",
-      "rank": 2,
+      "rank": 1,
       "patterns": ["**/infrastructure/**", "**/repository/**", "**/persistence/**", "**/dao/**"]
+    },
+    {
+      "name": "application",
+      "rank": 2,
+      "patterns": ["**/application/**", "**/service/**", "**/usecase/**"]
     },
     {
       "name": "presentation",
       "rank": 3,
       "patterns": ["**/api/**", "**/controller/**", "**/web/**", "**/handler/**"]
+    }
+  ],
+  "forbidden_dependencies": [
+    {
+      "id": "controller-direct-repository",
+      "from_layer": "presentation",
+      "to_layer": "infrastructure",
+      "mode": "advisory",
+      "why": "Controller 直接依赖 Repository 会绕过 Service 的业务规则、缓存失效与事务边界，方向规则本身不会拦（外层依赖内层是允许的）"
+    }
+  ],
+  "forbidden_annotations": [
+    {
+      "id": "controller-transactional",
+      "layer": "presentation",
+      "regex": "@Transactional\\b",
+      "mode": "advisory",
+      "why": "事务边界属于 Service；写在 Controller 上容易在参数校验、权限判断之后才开启，重构时也最容易被漏掉"
     }
   ],
   "policy": "outer-may-depend-on-inner",
@@ -32,6 +53,13 @@
     "**/tests/**",
     "**/test/**",
     "**/migrations/**",
-    "**/__pycache__/**"
+    "**/__pycache__/**",
+    "**/.vite/**",
+    "**/target/**",
+    "**/pptx_build/**",
+    "**/coverage/**",
+    "**/backend/src/main/resources/static/**",
+    "**/.cline/skills/**",
+    "**/.trae/skills/**"
   ]
 }

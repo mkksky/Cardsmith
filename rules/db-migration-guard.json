@@ -1,9 +1,10 @@
 {
-  "description": "受保护路径守卫的规则。protected_paths 下的任何暂存变更（含删除）都会被 pre-commit 阻断。按项目实际约定增删路径。",
+  "description": "受保护路径守卫的规则。protected_paths 下的任何暂存变更（增/改/删/改名）都会被 pre-commit 阻断。按项目实际约定增删路径。",
   "protected_paths": [
     "database/migrations/**",
     "database/seeders/**"
   ],
   "skip_paths": [],
+  "allow_new": false,
   "why": "迁移脚本落地后视为只读：改历史迁移会让新环境的库结构与已部署环境不一致，且破坏迁移工具的版本记录。要变更请走新的迁移脚本或显式评审流程。"
 }

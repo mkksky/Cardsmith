@@ -6,14 +6,26 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" ahk-v2",
+            "description": "校验 .ahk 脚本是否用了 AutoHotkey v2 语法",
+            "timeout": 15
+          },
+          {
+            "type": "command",
             "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" protected-paths",
             "description": "阻断受保护路径（迁移脚本等）下的任何暂存变更",
             "timeout": 10
           },
           {
             "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" dead-code",
+            "description": "检查暂存文件的 require 绑定使用情况与全仓库导出引用计数",
+            "timeout": 20
+          },
+          {
+            "type": "command",
             "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" doc-sync",
-            "description": "查文档引用的路径是否存在、API 文档声明的方法在源码里是否存在",
+            "description": "查文档引用路径、API 符号，以及可选的新增文件文档覆盖",
             "timeout": 15
           },
           {
@@ -33,6 +45,18 @@
             "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" import-direction",
             "description": "用 AST 解析各层文件的导入，判断是否违反分层依赖方向",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" module-contracts",
+            "description": "检查内部解构 require 请求的成员是否由目标模块真实导出",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python \"${CODEBUDDY_PROJECT_DIR}/hooks/run.py\" perf-smells",
+            "description": "阻断档：列表 key 用下标、循环内 setData、forEach+async、睡眠等异步",
+            "timeout": 10
           },
           {
             "type": "command",

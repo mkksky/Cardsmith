@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "仓库卫生与构建产物同步。只拦『本次新增』的产物入库，存量已跟踪的文件走提示档 —— 否则装上规则的第一天就会把门禁卡死，逼人用 --no-verify。",
+  "blocked_paths": [
+    ".venv/**",
+    "node_modules/**",
+    "dist/**",
+    "coverage/**",
+    "target/**",
+    "*.log",
+    "tmp/**"
+  ],
+  "advisory_paths": [
+    "backend/src/main/resources/static/**"
+  ],
+  "build_sync": {
+    "source": "src",
+    "artifact": "backend/src/main/resources/static",
+    "max_lag_days": 7,
+    "why": "后端服务的是 static/，前端构建输出在 dist/；两者靠手工同步时，线上很容易长期停在旧版本"
+  }
+}

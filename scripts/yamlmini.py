@@ -233,9 +233,7 @@ def _parse_scalar(text: str, line: _Line) -> Any:
         if text[0] in "\"'":
             raise YamlError("引号没有闭合", line.no, text)
 
-    # 数字
-    # 两条正则都已在前面fullmatch 校验过格式，int()/float() 不可能抛 ValueError，
-    # 所以这里不再套 try/except —— 那层兜底从不是防御，只是让错误静默滑走。
+    # 数字（fullmatch 已保证能解析，直接转换，无死 except）
     if re.fullmatch(r"[-+]?\d+", text):
         return int(text)
     if re.fullmatch(r"[-+]?(\d+\.\d*|\.\d+|\d+)([eE][-+]?\d+)?", text) and re.search(r"[.eE]", text):

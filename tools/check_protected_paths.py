@@ -11,6 +11,8 @@
 
 设计取舍：
     - 不解析文件内容，只看路径。内容级检查（迁移是否可回滚）是另一个工具的事
+    - 默认「新增也拦」（保守）。需要让正常追加的新文件通过的目录，规则里写
+      allow_new: true —— 只放行 A（新增），修改与删除照拦
     - --all 模式对比 HEAD 工作区差异，用于摸底和端到端验证
     - 支持 --selftest；退出码 0=通过 1=有违规 2=配置错误
 
@@ -57,6 +59,11 @@ def load_rules(path: Path) -> dict:
 
     data.setdefault("skip_paths", [])
     data.setdefault("why", "受保护目录：变更必须走显式流程，不许顺手改")
+    # 默认「新增也拦」：保守值。迁移脚本这类受保护目录里，新增同样可能有问题，
+    # 需要放行的项目显式写 allow_new: true —— 默认放宽比默认收紧危险得多。
+    allow_new = data.setdefault("allow_new", False)
+    if not isinstance(allow_new, bool):
+        raise RuleError("allow_new 必须是布尔值（true / false）")
     return data
 
 
@@ -109,34 +116,72 @@ def _run_git(args: list, root: Path) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuleError(f"git 命令失败：{exc}") from exc
     if proc.returncode != 0:
-        raise RuleError(f"git 命令失败（当前目录可能不是 git 仓库）：{proc.stderr.decode('utf-8', errors='replace').strip()}")
+        raise RuleError(
+            f"git 命令失败（当前目录可能不是 git 仓库）：{proc.stderr.decode('utf-8', errors='replace').strip()}"
+        )
     return proc.stdout.decode("utf-8", errors="replace")
 
 
-def staged_files(root: Path) -> "list[str]":
-    """暂存区的全部变更路径。**不加 --diff-filter 过滤**：
+def parse_name_status(out: str) -> "list[tuple[str, str]]":
+    """把 git --name-status 输出解析成 [(状态字母, 路径)]。
+
+    --no-renames 保证改名被拆成 D + A 两条，不会出现三列（R100\\t旧\\t新），
+    这样「删了一个迁移脚本」不会因为被识别成改名而漏掉 D 那半。
+    """
+    changes = []
+    for line in out.splitlines():
+        parts = [p for p in line.strip().split("\t") if p]
+        if len(parts) < 2:
+            continue
+        changes.append((parts[0][:1].upper(), parts[-1]))
+    return changes
+
+
+def staged_changes(root: Path) -> "list[tuple[str, str]]":
+    """暂存区的 (状态, 路径)。**不加 --diff-filter 过滤**：
     受保护路径检查必须覆盖删除（D），ACMR 过滤会漏掉被删的迁移脚本 —— 踩过。"""
-    out = _run_git(["diff", "--cached", "--name-only"], root)
-    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+    out = _run_git(["diff", "--cached", "--name-status", "--no-renames"], root)
+    return parse_name_status(out)
 
 
-def worktree_changed_files(root: Path) -> "list[str]":
+def worktree_changes(root: Path) -> "list[tuple[str, str]]":
     """--all 模式：工作区相对 HEAD 的全部变更（含未暂存），用于摸底。"""
-    out = _run_git(["diff", "--name-only", "HEAD"], root)
-    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+    out = _run_git(["diff", "--name-status", "--no-renames", "HEAD"], root)
+    return parse_name_status(out)
 
 
 # ────────────────────────── 检查 ──────────────────────────
 
 
-def check_paths(rels: "list[str]", rules: dict) -> "list[dict]":
+def status_map(changes: "list[tuple[str, str]]") -> "dict[str, str]":
+    """[(状态, 路径)] → {路径: 状态}。
+
+    单独抽出来是因为这里踩过：`dict(changes)` 得到的是 {状态: 路径}，键值反了，
+    status 永远查不到 → allow_new 静默失效。自检专门有一条守这个方向。
+    """
+    return {path: status for status, path in changes}
+
+
+def check_paths(
+    rels: "list[str]", rules: dict, statuses: "dict[str, str] | None" = None
+) -> "list[dict]":
+    """rels 是变更路径；statuses 是路径 → git 状态字母（A/M/D/R）。
+
+    `allow_new: true` 时放行 A（新增）—— 迁移这类目录的正常工作流就是不断追加新脚本，
+    把新增也当违规会让门禁变成「每次写迁移都得 --no-verify」，等于亲手废掉这道闸。
+    statuses 缺省（--files 显式点名）时不做放行：点名检查就是要看它算不算违规。
+    """
+    allow_new = rules.get("allow_new") is True
     issues = []
     for rel in rels:
         rel = rel.replace("\\", "/")
         if is_skipped(rel, rules["skip_paths"]):
             continue
+        status = (statuses or {}).get(rel, "")
+        if allow_new and status == "A":
+            continue
         if is_protected(rel, rules["protected_paths"]):
-            issues.append({"file": rel, "why": rules["why"]})
+            issues.append({"file": rel, "status": status, "why": rules["why"]})
     return issues
 
 
@@ -152,10 +197,19 @@ _SELFTEST_RULES = {
 
 def _selftest() -> int:
     failures = 0
+    total = 0
+    allow_new_rules = {**_SELFTEST_RULES, "allow_new": True}
 
-    def case(name: str, rels: "list[str]", expect: int) -> None:
-        nonlocal failures
-        got = check_paths(rels, _SELFTEST_RULES)
+    def case(
+        name: str,
+        rels: "list[str]",
+        expect: int,
+        rules: "dict | None" = None,
+        statuses: "dict[str, str] | None" = None,
+    ) -> None:
+        nonlocal failures, total
+        total += 1
+        got = check_paths(rels, rules or _SELFTEST_RULES, statuses)
         if len(got) == expect:
             print(f"  [v] {name}")
         else:
@@ -171,7 +225,36 @@ def _selftest() -> int:
     case("Windows 反斜杠路径归一后仍命中", ["database\\migrations\\x.sql"], 1)
     case("空列表 → 通过", [], 0)
 
+    # allow_new：只放行「新增」，修改仍拦
+    m = "database/migrations/2026_init.sql"
+    new_m = "database/migrations/2027_new.sql"
+    case("默认（无 allow_new）新增仍拦", [new_m], 1, statuses={new_m: "A"})
+    case("allow_new + 新增 → 通过", [new_m], 0, allow_new_rules, {new_m: "A"})
+    case("allow_new + 修改 → 仍违规", [m], 1, allow_new_rules, {m: "M"})
+    case("allow_new + 删除 → 仍违规", [m], 1, allow_new_rules, {m: "D"})
+    case("allow_new + 状态缺失 → 保守拦下", [new_m], 1, allow_new_rules, {})
+
+    # 集成层回归：changes → {路径: 状态} 的方向
+    # （曾写成 dict(changes)，得到 {状态: 路径}，status 永远查不到 → allow_new 静默失效）
+    total += 1
+    sm = status_map([("A", "new.sql"), ("M", "old.sql")])
+    if sm.get("new.sql") == "A" and sm.get("old.sql") == "M" and "A" not in sm:
+        print("  [v] status_map 方向：路径 → 状态")
+    else:
+        print(f"  [x] status_map 方向异常：{sm}")
+        failures += 1
+
+    # git --name-status 输出解析
+    total += 1
+    parsed = parse_name_status("A\tnew.sql\nM\told.sql\nD\tgone.sql\n")
+    if parsed == [("A", "new.sql"), ("M", "old.sql"), ("D", "gone.sql")]:
+        print("  [v] parse_name_status 解析正确")
+    else:
+        print(f"  [x] parse_name_status 异常：{parsed}")
+        failures += 1
+
     # glob 语义回归：**/ 与 * 的区别
+    total += 1
     r = glob_to_regex("database/migrations/**")
     if r.match("database/migrations/a.sql") and not r.match("other/a.sql"):
         print("  [v] glob ** 语义：匹配子树、不越界")
@@ -181,9 +264,9 @@ def _selftest() -> int:
 
     print()
     if failures:
-        print(f"自检失败：{failures} 项异常")
+        print(f"自检失败：{failures}/{total} 项异常")
         return 1
-    print("自检全绿：9/9")
+    print(f"自检全绿：{total}/{total}")
     return 0
 
 
@@ -194,7 +277,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="受保护路径守卫")
     ap.add_argument("--rules", help="规则 JSON 路径")
     ap.add_argument("--root", default=".")
-    ap.add_argument("--all", action="store_true", help="对比 HEAD 的工作区变更（摸底用）")
+    ap.add_argument(
+        "--all", action="store_true", help="对比 HEAD 的工作区变更（摸底用）"
+    )
     ap.add_argument("--files", nargs="*")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -212,24 +297,31 @@ def main() -> int:
         rules = load_rules(Path(args.rules))
         if args.files:
             targets = list(args.files)
+            statuses: "dict[str, str]" = {}
         elif args.all:
-            targets = worktree_changed_files(root)
+            changes = worktree_changes(root)
+            targets = [p for _, p in changes]
+            statuses = status_map(changes)
         else:
-            targets = staged_files(root)
+            changes = staged_changes(root)
+            targets = [p for _, p in changes]
+            statuses = status_map(changes)
     except RuleError as exc:
         print(f"[x] {exc}", file=sys.stderr)
         return 2
 
-    issues = check_paths(targets, rules)
+    issues = check_paths(targets, rules, statuses)
 
     if issues:
         print(f"[x] 受保护路径出现 {len(issues)} 处变更：\n")
         for i in issues:
-            print(f"  {i['file']}")
+            print(f"  [{i['status'] or '?'}] {i['file']}")
             print(f"    {i['why']}")
             print()
         print("这些文件落地后视为只读。确需变更：先在评审里说清影响面与回滚路径，")
         print("评审通过后由负责人执行，而不是混在业务提交里顺手改掉。")
+        if rules.get("allow_new") is True:
+            print("（本规则已开 allow_new：新增文件放行，上面都是对已有文件的改动）")
         return 1
 
     if not args.quiet:

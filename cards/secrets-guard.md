@@ -1,7 +1,7 @@
 ---
 name: secrets-guard
 stage: coding
-version: 1
+version: 2
 description: >-
   密钥防泄守卫：pre-commit 扫描暂存文件，私钥块、云厂商 token 等已知格式与
   .env/密钥文件本身被暂存 → 高危阻断；敏感变量名 + 密钥形态字符串的赋值 →

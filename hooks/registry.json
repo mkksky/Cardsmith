@@ -1,6 +1,24 @@
 {
   "description": "由 scripts/build.py 生成，勿手改。hooks/run.py 按本表定位脚本。",
   "tools": {
+    "ahk-v2": {
+      "card": "ahk-v2-guard",
+      "script": "tools/check_ahk_v2.py",
+      "args": [
+        "--rules",
+        "rules/ahk-v2-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "artifact-guard": {
+      "card": "artifact-guard",
+      "script": "tools/check_artifact_guard.py",
+      "args": [
+        "--rules",
+        "rules/artifact-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
     "commit-msg": {
       "card": "commit-message-guard",
       "script": "tools/check_commit_msg.py",
@@ -10,12 +28,30 @@
       ],
       "inputs": "none"
     },
+    "config-guard": {
+      "card": "config-guard",
+      "script": "tools/check_config_guard.py",
+      "args": [
+        "--rules",
+        "rules/config-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
     "protected-paths": {
       "card": "db-migration-guard",
       "script": "tools/check_protected_paths.py",
       "args": [
         "--rules",
         "rules/db-migration-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "dead-code": {
+      "card": "dead-code-guard",
+      "script": "tools/check_dead_code.py",
+      "args": [
+        "--rules",
+        "rules/dead-code-guard.json"
       ],
       "inputs": "staged-files"
     },
@@ -55,11 +91,38 @@
       ],
       "inputs": "staged-files"
     },
+    "module-contracts": {
+      "card": "module-contract-guard",
+      "script": "tools/check_module_contracts.py",
+      "args": [
+        "--rules",
+        "rules/module-contract-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
     "sync-state": {
       "card": "multi-machine-sync-guard",
       "script": "tools/check_sync_state.py",
       "args": [],
       "inputs": "none"
+    },
+    "perf-smells": {
+      "card": "perf-path-guard",
+      "script": "tools/check_perf_smells.py",
+      "args": [
+        "--rules",
+        "rules/perf-guard.json"
+      ],
+      "inputs": "staged-files"
+    },
+    "perf-serial-advisory": {
+      "card": "perf-path-guard",
+      "script": "tools/check_perf_smells.py",
+      "args": [
+        "--rules",
+        "rules/perf-guard-advisory.json"
+      ],
+      "inputs": "staged-files"
     },
     "release-checklist": {
       "card": "release-checklist",

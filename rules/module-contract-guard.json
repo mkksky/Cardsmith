@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "CommonJS 模块导出契约默认规则。检查内部解构 require 请求的成员是否由目标模块真实导出；只解析可静态判定的 module.exports / exports.name / 对象变量 / 再导出，动态导出保守跳过。项目可按自身布局配置 aliases 与 skip_paths。",
+  "extensions": [
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".mjs",
+    ".cjs"
+  ],
+  "aliases": {},
+  "skip_paths": [
+    "**/__pycache__/**",
+    "**/node_modules/**",
+    "**/miniprogram_npm/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.git/**",
+    "**/.workbuddy/**",
+    "**/.codingskills/**",
+    "**/.local-evidence/**",
+    "**/*.min.js"
+  ]
+}

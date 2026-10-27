@@ -2,6 +2,39 @@
   "description": "由 scripts/build.py 生成，勿手改。.githooks/pre-commit 按 blocking 决定是否中断。",
   "tools": [
     {
+      "id": "ahk-v2",
+      "script": "tools/check_ahk_v2.py",
+      "args": [
+        "--rules",
+        "rules/ahk-v2-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "ahk-v2-guard"
+    },
+    {
+      "id": "artifact-guard",
+      "script": "tools/check_artifact_guard.py",
+      "args": [
+        "--rules",
+        "rules/artifact-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "artifact-guard"
+    },
+    {
+      "id": "config-guard",
+      "script": "tools/check_config_guard.py",
+      "args": [
+        "--rules",
+        "rules/config-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "config-guard"
+    },
+    {
       "id": "protected-paths",
       "script": "tools/check_protected_paths.py",
       "args": [
@@ -11,6 +44,17 @@
       "inputs": "staged-files",
       "blocking": true,
       "card": "db-migration-guard"
+    },
+    {
+      "id": "dead-code",
+      "script": "tools/check_dead_code.py",
+      "args": [
+        "--rules",
+        "rules/dead-code-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "dead-code-guard"
     },
     {
       "id": "doc-sync",
@@ -55,6 +99,39 @@
       "inputs": "staged-files",
       "blocking": true,
       "card": "layered-architecture-guard"
+    },
+    {
+      "id": "module-contracts",
+      "script": "tools/check_module_contracts.py",
+      "args": [
+        "--rules",
+        "rules/module-contract-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "module-contract-guard"
+    },
+    {
+      "id": "perf-smells",
+      "script": "tools/check_perf_smells.py",
+      "args": [
+        "--rules",
+        "rules/perf-guard.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": true,
+      "card": "perf-path-guard"
+    },
+    {
+      "id": "perf-serial-advisory",
+      "script": "tools/check_perf_smells.py",
+      "args": [
+        "--rules",
+        "rules/perf-guard-advisory.json"
+      ],
+      "inputs": "staged-files",
+      "blocking": false,
+      "card": "perf-path-guard"
     },
     {
       "id": "debug-smells",

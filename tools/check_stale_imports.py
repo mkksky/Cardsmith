@@ -394,6 +394,12 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true", help="跑内置自检")
     ap.add_argument("--baseline", help="基线文件路径（默认按约定自动发现 baselines/<rules 名>.baseline.json）")
     ap.add_argument("--update-baseline", action="store_true", help="把当前违规写入基线（棘轮登记），退出码 0")
+    ap.add_argument(
+        "--accept-debt",
+        action="store_true",
+        help="棘轮闸门：本次会新增债务时，显式认账放行（必须配 --debt-reason）",
+    )
+    ap.add_argument("--debt-reason", default="", help="认账理由，会记进基线文件的 accepted 段")
     args = ap.parse_args()
 
     if args.selftest:
@@ -438,9 +444,14 @@ def main() -> int:
 
     if args.update_baseline:
         keys = [violation_key(v) for v in all_violations]
-        baseline_store.write(baseline_path, keys)
-        print(f"[+] 基线已更新：{baseline_path}")
-        print(f"    登记存量债务 {len(set(keys))} 条。新增违规仍会阻断；修掉存量后重跑本命令收紧。")
+        try:
+            plan = baseline_store.apply_ratchet(
+                baseline_path, keys, baseline, args.accept_debt, args.debt_reason, set(targets)
+            )
+        except baseline_store.RatchetError as exc:
+            print(f"[x] {exc}", file=sys.stderr)
+            return 1
+        print(baseline_store.format_ratchet_report(baseline_path, plan))
         return 0
 
     debts = [v for v in all_violations if violation_key(v) in baseline]

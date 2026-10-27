@@ -58,7 +58,9 @@ class GitError(Exception):
 
 def _run(args: "list[str]", root: Path, timeout: int = TIMEOUT_GIT) -> str:
     try:
-        proc = subprocess.run(["git", *args], cwd=root, capture_output=True, timeout=timeout)
+        proc = subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, timeout=timeout
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitError(f"git 命令失败：{exc}") from exc
     if proc.returncode != 0:
@@ -136,9 +138,18 @@ def decide(
 _DECIDE_MSG = {
     "synced": ("[v] 本地与远端完全一致（SHA 硬撞相等）", 0),
     "ahead-ok": ("[v] 本地领先于远端，正常可推送状态", 0),
-    "behind": ("[x] 本地落后于远端 —— 另一台机器已经推过了。先 git pull --rebase 再继续", 1),
-    "diverged": ("[x] 本地与远端分叉（双方都有对方没有的提交）。先 git pull --rebase，绝不许 --force", 1),
-    "new-branch": ("[!] 远端还没有这个分支（新分支）。确认 remote/分支名没写错后可继续", 0),
+    "behind": (
+        "[x] 本地落后于远端 —— 另一台机器已经推过了。先 git pull --rebase 再继续",
+        1,
+    ),
+    "diverged": (
+        "[x] 本地与远端分叉（双方都有对方没有的提交）。先 git pull --rebase，绝不许 --force",
+        1,
+    ),
+    "new-branch": (
+        "[!] 远端还没有这个分支（新分支）。确认 remote/分支名没写错后可继续",
+        0,
+    ),
     "no-commits": ("[!] 当前分支还没有任何提交", 0),
     "unknown": (
         "[x] 无法判定领先/落后：本地追踪分支缺失或已过期（与远端真实 SHA 不一致）。\n"
@@ -173,7 +184,9 @@ def collect(root: Path, remote: str, branch: str) -> dict:
     info["current_branch"] = _try_run(["rev-parse", "--abbrev-ref", "HEAD"], root)
 
     try:
-        raw = _run(["ls-remote", remote, f"refs/heads/{branch}"], root, timeout=TIMEOUT_GIT)
+        raw = _run(
+            ["ls-remote", remote, f"refs/heads/{branch}"], root, timeout=TIMEOUT_GIT
+        )
         info["remote_sha"] = parse_lsremote(raw, f"refs/heads/{branch}")
         info["network_ok"] = True
     except GitError as exc:
@@ -194,7 +207,13 @@ def collect(root: Path, remote: str, branch: str) -> dict:
         if tracking == info["remote_sha"]:
             try:
                 counts = _run(
-                    ["rev-list", "--left-right", "--count", f"HEAD...{remote}/{branch}"], root
+                    [
+                        "rev-list",
+                        "--left-right",
+                        "--count",
+                        f"HEAD...{remote}/{branch}",
+                    ],
+                    root,
                 )
                 left, right = counts.split()
                 info["ahead"], info["behind"] = int(left), int(right)
@@ -227,12 +246,22 @@ def _selftest() -> int:
     # parse_lsremote
     raw = f"{SHA_A}\trefs/heads/main\n{SHA_B}\trefs/heads/main-v2\n"
     case("ls-remote 精确匹配 ref", parse_lsremote(raw, "refs/heads/main") or "", SHA_A)
-    case("ls-remote 不被相似 ref 混淆", parse_lsremote(raw, "refs/heads/main-v2") or "", SHA_B)
-    case("ls-remote 找不到 ref", parse_lsremote(raw, "refs/heads/nope") or "None", "None")
+    case(
+        "ls-remote 不被相似 ref 混淆",
+        parse_lsremote(raw, "refs/heads/main-v2") or "",
+        SHA_B,
+    )
+    case(
+        "ls-remote 找不到 ref", parse_lsremote(raw, "refs/heads/nope") or "None", "None"
+    )
 
     # pick_remote —— 远端名不该被写死
-    case("有上游配置 → 用上游", pick_remote("okx自动交易平台", ["okx自动交易平台", "other"]), "okx自动交易平台")
-    case("无上游 + 单远端 → 用该远端", pick_remote("", ["okx自动交易平台"]), "okx自动交易平台")
+    case(
+        "有上游配置 → 用上游",
+        pick_remote("发布仓库", ["发布仓库", "other"]),
+        "发布仓库",
+    )
+    case("无上游 + 单远端 → 用该远端", pick_remote("", ["发布仓库"]), "发布仓库")
     case("无上游 + 多远端 → 兜底 origin", pick_remote("", ["a", "b"]), "origin")
     case("无任何远端 → 兜底 origin", pick_remote("", []), "origin")
     case("上游值只有空白 → 视为无", pick_remote("   ", ["solo"]), "solo")
@@ -245,8 +274,14 @@ def _selftest() -> int:
     case("远端无分支 → new-branch", decide(SHA_A, None, 0, 0), "new-branch")
     case("本地无提交 → no-commits", decide(None, SHA_A, 0, 0), "no-commits")
     case("差量为 0 但追踪可信 → 仍判 ahead-ok", decide(SHA_A, SHA_B, 0, 0), "ahead-ok")
-    case("差量不可信 + SHA 不等 → unknown", decide(SHA_A, SHA_B, 0, 0, False), "unknown")
-    case("差量不可信 + SHA 相等 → 仍判 synced", decide(SHA_A, SHA_A, 0, 0, False), "synced")
+    case(
+        "差量不可信 + SHA 不等 → unknown", decide(SHA_A, SHA_B, 0, 0, False), "unknown"
+    )
+    case(
+        "差量不可信 + SHA 相等 → 仍判 synced",
+        decide(SHA_A, SHA_A, 0, 0, False),
+        "synced",
+    )
 
     # 判定消息与退出码映射
     checks += 1
@@ -272,7 +307,9 @@ def _selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="多机同步状态检查（ls-remote 独立对撞）")
     ap.add_argument("--root", default=".")
-    ap.add_argument("--remote", default=None, help="默认自动识别（分支上游 → 唯一远端 → origin）")
+    ap.add_argument(
+        "--remote", default=None, help="默认自动识别（分支上游 → 唯一远端 → origin）"
+    )
     ap.add_argument("--branch", help="默认取当前分支")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--selftest", action="store_true")
@@ -287,7 +324,9 @@ def main() -> int:
         if not args.branch:
             args.branch = _run(["rev-parse", "--abbrev-ref", "HEAD"], root)
         if args.branch in ("HEAD", ""):
-            print("[x] 当前处于 detached HEAD 或空仓库，无法判定同步状态", file=sys.stderr)
+            print(
+                "[x] 当前处于 detached HEAD 或空仓库，无法判定同步状态", file=sys.stderr
+            )
             return 2
     except GitError as exc:
         print(f"[x] {exc}", file=sys.stderr)
@@ -309,21 +348,31 @@ def main() -> int:
             print(f"[!] 无法连接远端 {args.remote}，跳过同步检查：")
             print(f"    {info.get('network_error', '')}")
             if not remote_auto and args.remote == "origin":
-                print("    提示：本仓库没有名为 origin 的远端。用 --remote 指定，或配好")
+                print(
+                    "    提示：本仓库没有名为 origin 的远端。用 --remote 指定，或配好"
+                )
                 print("          branch.<分支>.remote 后本工具会自动识别。")
             print("    push 本身也会因网络失败；网络恢复后建议手动跑一次本工具对撞。")
         return 0
 
     verdict_key = decide(
-        info["head"], info["remote_sha"], info["ahead"], info["behind"], info.get("counts_ok", False)
+        info["head"],
+        info["remote_sha"],
+        info["ahead"],
+        info["behind"],
+        info.get("counts_ok", False),
     )
     verdict, code = _DECIDE_MSG[verdict_key]
 
     if not args.quiet:
         tag = "（自动识别）" if remote_auto else ""
-        print(f"[i] 多机同步对撞（remote={info['remote']}{tag} branch={info['branch']}）")
+        print(
+            f"[i] 多机同步对撞（remote={info['remote']}{tag} branch={info['branch']}）"
+        )
         print(f"    本地 HEAD : {info['head'] or '（无提交）'}")
-        print(f"    远端 SHA  : {info['remote_sha'] or '（分支不存在）'}   ← ls-remote 现查，非本地缓存")
+        print(
+            f"    远端 SHA  : {info['remote_sha'] or '（分支不存在）'}   ← ls-remote 现查，非本地缓存"
+        )
         print(f"    追踪分支  : {info['tracking_sha'] or '（不存在）'}")
         if info.get("counts_ok"):
             print(f"    ahead/behind: {info['ahead']}/{info['behind']}")

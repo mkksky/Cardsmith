@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "description": "死代码检查默认规则（失效导入 + 零引用导出）。skip_paths 排除第三方与生成物；extensions 按 CJS 仓库定（小程序项目 .js 即够）。已有文件的 skip_paths 归项目所有。",
+  "extensions": [
+    ".js",
+    ".mjs",
+    ".cjs"
+  ],
+  "skip_paths": [
+    "**/__pycache__/**",
+    "**/node_modules/**",
+    "**/miniprogram_npm/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.git/**",
+    "**/.workbuddy/**",
+    "**/.codingskills/**",
+    "**/.local-evidence/**",
+    "**/*.min.js"
+  ]
+}

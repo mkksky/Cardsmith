@@ -102,7 +102,10 @@ def limit_for(rel: str, rules: dict) -> "int | None":
     overrides = rules["file_lines"]["overrides"]
     suffix = Path(rel).suffix.lower()
     for pattern, value in overrides.items():
-        if glob_to_regex(pattern).match(Path(rel).name) or pattern.lower() == "*" + suffix:
+        if (
+            glob_to_regex(pattern).match(Path(rel).name)
+            or pattern.lower() == "*" + suffix
+        ):
             return value if isinstance(value, int) else None
     return rules["file_lines"]["default"]
 
@@ -140,7 +143,15 @@ def git_staged_files(root: Path) -> "list[str]":
         proc = subprocess.run(
             # core.quotePath=false：默认会把中文路径转义成 "\345\260..." 这类字面串，
             # 路径解析不到文件 → 检查静默通过（2026-10-10 修）
-            ["git", "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+            [
+                "git",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--cached",
+                "--name-only",
+                "--diff-filter=ACMR",
+            ],
             cwd=root,
             capture_output=True,
             timeout=TIMEOUT_GIT,
@@ -149,7 +160,11 @@ def git_staged_files(root: Path) -> "list[str]":
         raise RuleError(f"读取 git 暂存文件失败：{exc}") from exc
     if proc.returncode != 0:
         raise RuleError("git 命令失败，当前目录可能不是 git 仓库")
-    return [ln.strip() for ln in proc.stdout.decode("utf-8", errors="replace").splitlines() if ln.strip()]
+    return [
+        ln.strip()
+        for ln in proc.stdout.decode("utf-8", errors="replace").splitlines()
+        if ln.strip()
+    ]
 
 
 def all_files(root: Path, rules: dict) -> "list[str]":
@@ -177,6 +192,72 @@ def all_files(root: Path, rules: dict) -> "list[str]":
 
 # ────────────────────────── 检查 ──────────────────────────
 
+# 二进制资产没有「行」这个概念。行数上限是「这个文件承担了两件事」的信号，
+# 而 zip 容器 / 字体 / 图片里既没有函数也没有职责可拆。
+# 已知类型先按扩展名短路（不读盘），未知类型再用 NUL 字节嗅探兜底。
+_BINARY_SUFFIXES = frozenset(
+    {
+        ".pptx",
+        ".ppt",
+        ".docx",
+        ".doc",
+        ".xlsx",
+        ".xls",
+        ".pdf",
+        ".zip",
+        ".7z",
+        ".rar",
+        ".tar",
+        ".gz",
+        ".tgz",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".ico",
+        ".webp",
+        ".bmp",
+        ".psd",
+        ".ttf",
+        ".otf",
+        ".woff",
+        ".woff2",
+        ".eot",
+        ".jar",
+        ".war",
+        ".class",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".exe",
+        ".pyc",
+        ".mp3",
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".wav",
+        ".flac",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+    }
+)
+
+# git 的判据：前 8000 字节出现 NUL 就是二进制。取 8 KiB 是因为
+# 容器格式的头部结构一定落在这一段里。
+BINARY_SNIFF_BYTES = 8192
+
+
+def is_binary(path: Path) -> bool:
+    if path.suffix.lower() in _BINARY_SUFFIXES:
+        return True
+    try:
+        with path.open("rb") as fh:
+            return b"\x00" in fh.read(BINARY_SNIFF_BYTES)
+    except OSError:
+        # 读不动就不拦 —— 交给后续的真实报错，别在这里伪装成「二进制」放行
+        return False
+
 
 def count_lines(path: Path) -> int:
     data = path.read_bytes()
@@ -195,7 +276,9 @@ def check_one(rel: str, root: Path, rules: dict) -> "list[dict]":
     issues = []
 
     limit = limit_for(rel, rules)
-    if limit is not None:
+    # 二进制文件跳过行数检查：对压缩字节数 0x0A 得到的是随机数，不是行数。
+    # 曾把一个 804 KB 的 .pptx 判成「1531 行，超限 1031 行」，还建议作者去拆函数。
+    if limit is not None and not is_binary(path):
         n = count_lines(path)
         if n > limit:
             issues.append(
@@ -227,88 +310,11 @@ def check_one(rel: str, root: Path, rules: dict) -> "list[dict]":
 # ────────────────────────── 自检 ──────────────────────────
 
 
-_SELFTEST_RULES = {
-    "file_lines": {"default": 10, "overrides": {"*.md": None, "*.js": 8}},
-    "naming": {"*.py": "^[a-z][a-z0-9_]*$", "*.java": "^[A-Z][A-Za-z0-9]*$"},
-    "skip_paths": [],
-}
-
-
 def _selftest() -> int:
-    import tempfile
+    """回归用例在 check_size_naming_selftest.py —— 内联会让本文件超过 500 行上限。"""
+    from check_size_naming_selftest import run
 
-    failures = 0
-
-    def case(name: str, files: dict, expect: int) -> None:
-        nonlocal failures
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            for rel, content in files.items():
-                p = root / rel
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(content, encoding="utf-8")
-            total = []
-            for rel in files:
-                total.extend(check_one(rel, root, _SELFTEST_RULES))
-            if len(total) == expect:
-                print(f"  [v] {name}")
-            else:
-                print(f"  [x] {name}\n      期望 {expect} 处，实际 {len(total)}：{total}")
-                failures += 1
-
-    case("短文件 + 合法命名 → 通过", {"good_name.py": "a = 1\n"}, 0)
-    case("超长文件 → 违规", {"short.py": "\n".join(f"x{i} = {i}" for i in range(20))}, 1)
-    case("PascalCase 的 .py → 命名违规", {"BadName.py": "a = 1\n"}, 1)
-    case("PascalCase 的 .java → 通过", {"UserService.java": "class UserService {}\n"}, 0)
-    case("snake_case 的 .java → 命名违规", {"user_service.java": "class X {}\n"}, 1)
-    case("overrides 设 null 的 .md 不查行数", {"long.md": "\n".join(str(i) for i in range(50))}, 0)
-    case("dunder 模块名（__init__）不适用命名规范", {"pkg/__init__.py": "a = 1\n", "pkg/__main__.py": "a = 1\n"}, 0)
-
-    # 守住 all_files 的扩展名收集：.js 只出现在 file_lines.overrides 里，
-    # 也必须在 --all 全量扫描中被收集并检查（曾经漏掉，静默失效）
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        (root / "big.js").write_text("\n".join("var x = 1" for _ in range(20)), encoding="utf-8")
-        (root / "note.md").write_text("text\n" * 50, encoding="utf-8")
-        (root / "good_name.py").write_text("a = 1\n", encoding="utf-8")
-        collected = all_files(root, _SELFTEST_RULES)
-        issues = [i for rel in collected for i in check_one(rel, root, _SELFTEST_RULES)]
-        js_in = any(rel.endswith(".js") for rel in collected)
-        js_flagged = any(i["file"].endswith(".js") for i in issues)
-        if js_in and js_flagged and not any(i["file"].endswith(".md") for i in issues):
-            print("  [v] --all 收集 .js 并查行数（overrides 键空间）")
-        else:
-            print(
-                f"  [x] --all 扩展名收集异常\n"
-                f"      收集到：{collected}\n      违规：{issues}"
-            )
-            failures += 1
-
-    # 基线（棘轮）：命中放行、未命中算新增；约定路径定位正确
-    with tempfile.TemporaryDirectory() as td:
-        bp = Path(td) / "x.baseline.json"
-        bp.write_text(json.dumps({"entries": ["a.py:file-lines"]}), encoding="utf-8")
-        keys = baseline_store.load(bp)
-        fake = [{"file": "a.py", "kind": "file-lines"}, {"file": "b.py", "kind": "naming"}]
-        fresh = [v for v in fake if violation_key(v) not in keys]
-        discovered = baseline_store.default_baseline_path(Path("rules/xxx.json"))
-        if (
-            len(keys) == 1
-            and len(fresh) == 1
-            and fresh[0]["file"] == "b.py"
-            and discovered.as_posix() == "baselines/xxx.baseline.json"
-        ):
-            print("  [v] 基线过滤与约定路径定位")
-        else:
-            print(f"  [x] 基线逻辑异常：keys={keys} fresh={fresh} discovered={discovered}")
-            failures += 1
-
-    print()
-    if failures:
-        print(f"自检失败：{failures} 项异常")
-        return 1
-    print("自检全绿：9/9")
-    return 0
+    return run()
 
 
 # ────────────────────────── 入口 ──────────────────────────
@@ -322,8 +328,23 @@ def main() -> int:
     ap.add_argument("--files", nargs="*")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--selftest", action="store_true")
-    ap.add_argument("--baseline", help="基线文件路径（默认自动发现 baselines/<rules 名>.baseline.json）")
-    ap.add_argument("--update-baseline", action="store_true", help="把当前违规写入基线（棘轮登记），退出码 0")
+    ap.add_argument(
+        "--baseline",
+        help="基线文件路径（默认自动发现 baselines/<rules 名>.baseline.json）",
+    )
+    ap.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="把当前违规写入基线（棘轮登记），退出码 0",
+    )
+    ap.add_argument(
+        "--accept-debt",
+        action="store_true",
+        help="棘轮闸门：本次会新增债务时，显式认账放行（必须配 --debt-reason）",
+    )
+    ap.add_argument(
+        "--debt-reason", default="", help="认账理由，会记进基线文件的 accepted 段"
+    )
     args = ap.parse_args()
 
     if args.selftest:
@@ -359,16 +380,28 @@ def main() -> int:
 
     # ── 基线（棘轮）：存量债务放行，新增阻断 ──
     try:
-        baseline_path, baseline = baseline_store.open_baseline(Path(args.rules), args.baseline, args.update_baseline)
+        baseline_path, baseline = baseline_store.open_baseline(
+            Path(args.rules), args.baseline, args.update_baseline
+        )
     except baseline_store.BaselineError as exc:
         print(f"[x] {exc}", file=sys.stderr)
         return 2
 
     if args.update_baseline:
         keys = [violation_key(i) for i in issues]
-        baseline_store.write(baseline_path, keys)
-        print(f"[+] 基线已更新：{baseline_path}")
-        print(f"    登记存量债务 {len(set(keys))} 条。新增违规仍会阻断；修掉存量后重跑本命令收紧。")
+        try:
+            plan = baseline_store.apply_ratchet(
+                baseline_path,
+                keys,
+                baseline,
+                args.accept_debt,
+                args.debt_reason,
+                set(targets),
+            )
+        except baseline_store.RatchetError as exc:
+            print(f"[x] {exc}", file=sys.stderr)
+            return 1
+        print(baseline_store.format_ratchet_report(baseline_path, plan))
         return 0
 
     debts = [i for i in issues if violation_key(i) in baseline]
@@ -380,7 +413,9 @@ def main() -> int:
         print(f"[x] 发现 {len(fresh)} 处新增违规：\n")
         for i in over:
             print(f"  {i['file']}")
-            print(f"    文件 {i['actual']} 行，超过上限 {i['limit']} 行（超出 {i['excess']} 行）")
+            print(
+                f"    文件 {i['actual']} 行，超过上限 {i['limit']} 行（超出 {i['excess']} 行）"
+            )
             print()
         for i in named:
             print(f"  {i['file']}")
@@ -391,11 +426,15 @@ def main() -> int:
             print("拆分的依据是职责，不是行数。")
             print()
         if debts and not args.quiet:
-            print(f"[!] 另有 {len(debts)} 处为基线登记的存量债务，不阻断（基线：{baseline_path}）")
+            print(
+                f"[!] 另有 {len(debts)} 处为基线登记的存量债务，不阻断（基线：{baseline_path}）"
+            )
         return 1
 
     if debts and not args.quiet:
-        print(f"[!] {len(debts)} 处存量债务在基线中，已放行。修掉后跑 --update-baseline 收紧。")
+        print(
+            f"[!] {len(debts)} 处存量债务在基线中，已放行。修掉后跑 --update-baseline 收紧。"
+        )
     if not args.quiet:
         print(f"[v] 体积与命名检查通过（检查了 {len(targets)} 个文件，新增 0 处违规）")
     return 0

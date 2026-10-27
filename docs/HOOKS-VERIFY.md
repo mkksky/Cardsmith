@@ -18,6 +18,37 @@
 | 钩子脚本从 stdin 收 JSON，用退出码表达意图：`0` 放行、`2` 阻断（stderr 回填给模型） | 官方 Hooks 文档 |
 | `~/.workbuddy/settings.json` 由 WorkBuddy 自己管理（含 `presetVersion` 等字段），**没有** `hooks` 字段 | 本机实际文件 |
 
+### 多 IDE 适配（2026-10-23 新增）
+
+`install.py --project <路径>` 不再写死往 `.codebuddy/settings.json` 灌 hooks，而是**自动检测项目根下存在哪些 IDE 目录**，分别写入对应的配置文件。支持的 5 个 IDE：
+
+| IDE | 项目目录 | 配置文件 | 格式 |
+|---|---|---|---|
+| CodeBuddy / WorkBuddy | `.codebuddy/` | `.codebuddy/settings.json` | hooks embed 在 settings 里 |
+| Trae | `.trae/` | `.trae/hooks.json` | 独立文件，顶层 `version: 1` |
+| Claude Code | `.claude/` | `.claude/settings.json` | hooks embed 在 settings 里 |
+| Codex (OpenAI) | `.codex/` | `.codex/hooks.json` | 独立文件 |
+| Qoder（阿里） | `.qoder/` | `.qoder/settings.json` | hooks embed 在 settings 里 |
+
+```bash
+# 自动检测：项目根下有什么 IDE 目录就往什么写（推荐）
+python scripts/install.py --project <路径>
+
+# 显式指定（不管目录存不存在都写）
+python scripts/install.py --project <路径> --ide codebuddy trae
+
+# 跳过 IDE hooks（只装运行时 + git 钩子）
+python scripts/install.py --project <路径> --ide
+
+# dry-run 预览
+python scripts/install.py --project <路径> --dry-run
+```
+
+> **注意**：Trae 会兼容读取 `.claude/settings.json`。如果项目同时有 `.trae/` 和 `.claude/`，
+> 在 Trae 会话里同一条钩子可能跑两次。只用 Trae 时建议 `--ide trae` 显式指定。
+
+---
+
 ## 二、还没确认的
 
 **唯一剩下的未知：WorkBuddy 宿主是否真的读取 `<项目>/.codebuddy/settings.json` 并触发钩子。**
@@ -26,13 +57,18 @@
 **2026-09-24 已把 某 Python 项目 的运行时刷新到 0.4.0**（PostToolUse 从 3 条
 补齐到 7 条，新增 secrets / debug-smells / doc-sync / protected-paths；
 runtime-state.json 已写入，版本对账静默通过）。注意该项目的 `.githooks/pre-commit`
-是**它自己版本化的链式钩子**（OKX 质量门禁 + 套件接力），重装运行时时
+是**它自己版本化的链式钩子**（项目自带的质量门禁 + 套件接力），重装运行时时
 **不得带 `--with-git-hook`**，否则会把人家版本化的钩子当宿主覆盖。
 
 最后一步「在 某 Python 项目 打开一个**新** WorkBuddy 会话 → 用 Write/Edit 改一个源文件 →
 观察是否出现 `[debug-smells]` / `[import-direction]` 上下文提示」只能在该项目的会话里做，
-本套件仓库的会话替不了。如果没反应，把 `install.py` 的 `SETTINGS_REL` 改成
-`.workbuddy/settings.json` 重装即可。
+本套件仓库的会话替不了。
+
+> ⚠️ WorkBuddy 桌面端有已知问题：启动宿主 CLI 时传了 `--setting-sources=user`，
+> 导致 `project` 作用域整体被屏蔽（见 `docs/HOOKS-HOST-GAP.md`）。
+> 所以即使 `.codebuddy/settings.json` 写对了，WorkBuddy 里也可能看不到钩子。
+> 解决办法：装**其他 IDE**（Trae / Claude Code / Codex / Qoder）或走
+> `~/.workbuddy/settings.json` 用户级配置。
 
 ### 2026-09-24 实测记录（某 Python 项目）
 
@@ -53,7 +89,7 @@ runtime-state.json 已写入，版本对账静默通过）。注意该项目的 
    注册表里没有新工具，`run.py` 对未注册工具**设计上静默放行**——表现为
    「钩子没反应」。重装一次运行时即恢复；`check.py` 与 pre-commit 对账层不受影响。
    **✅ 2026-09-24 已加版本对账**：安装时把套件版本与源仓库路径写进
-   `.cardsmith/runtime-state.json`，`run.py` 每次调用与套件根 `VERSION`
+   `.codingskills/runtime-state.json`，`run.py` 每次调用与套件根 `VERSION`
    对撞，落后就 stderr 警告（不阻断、不联网、仓库不在本机不误报）。
    自检：`python hooks/run.py --selftest`（6 用例）。
 
@@ -67,13 +103,15 @@ ruff/mypy/pytest 门禁不再被顶掉。实测（临时仓库 + 伪造 legacy �
 legacy 失败 → commit 被拦；legacy 修复 → commit 通过且接力输出可见；
 卸载后 hooksPath 还原、legacy 钩子原样保留。
 
-> 以下为验证前的原始分析，保留备查。
+> 以下为验证前的原始分析，保留备查。**⚠️ 2026-10-23 已过时**：`install.py` 不再
+> 写死 `SETTINGS_REL`，现在自动检测 5 个 IDE 目录（见上文"多 IDE 适配"一节）。
+> 关于 WorkBuddy 不读 project 作用域的根因分析见 `docs/HOOKS-HOST-GAP.md`。
 
 官方文档说的是 `.codebuddy/settings.json`，但 WorkBuddy 的实际数据目录是 `.workbuddy`。本机两者都存在（`.codebuddy/` 里只有 logs，`.workbuddy/` 里有 settings.json）。
 
-本套件的 `install.py` 目前写到 **`<项目>/.codebuddy/settings.json`**（因为 WorkBuddy 的权限预设里只登记了 `.codebuddy/settings.json` 这个项目级路径，没有 `.workbuddy/settings.json`）。
+~~本套件的 `install.py` 目前写到 **`<项目>/.codebuddy/settings.json`**（因为 WorkBuddy 的权限预设里只登记了 `.codebuddy/settings.json` 这个项目级路径，没有 `.workbuddy/settings.json`）。~~
 
-**如果实测发现不生效**，把 `install.py` 里的 `SETTINGS_REL` 改成 `.workbuddy/settings.json` 再装一次即可。别去手改 `~/.workbuddy/settings.json` —— 那个文件被程序管理，改动可能被覆盖。
+~~**如果实测发现不生效**，把 `install.py` 里的 `SETTINGS_REL` 改成 `.workbuddy/settings.json` 再装一次即可。别去手改 `~/.workbuddy/settings.json` —— 那个文件被程序管理，改动可能被覆盖。~~
 
 ## 三、三层保险（即使钩子没生效也不会裸奔）
 
@@ -112,7 +150,7 @@ echo "from <你的外层包> import x" >> <你的内层包>/xxx.py
 ```bash
 cd <你的项目>
 echo '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"<绝对路径>"}}' \
-  | python .cardsmith/hooks/run.py import-direction --blocking
+  | python .codingskills/hooks/run.py import-direction --blocking
 echo "退出码=$?   # 有违规应为 2"
 ```
 
@@ -120,13 +158,27 @@ echo "退出码=$?   # 有违规应为 2"
 
 ### 方法 C：看配置有没有被读到
 
-装完后检查该文件是否真的生成、内容是否指向正确的绝对路径：
+装完后检查对应 IDE 的配置文件是否真的生成、内容是否指向正确的绝对路径：
 
 ```bash
+# CodeBuddy / WorkBuddy
 cat <你的项目>/.codebuddy/settings.json
+
+# Trae
+cat <你的项目>/.trae/hooks.json
+
+# Claude Code
+cat <你的项目>/.claude/settings.json
+
+# Codex (OpenAI)
+cat <你的项目>/.codex/hooks.json
+
+# Qoder（阿里）
+cat <你的项目>/.qoder/settings.json
 ```
 
-如果位置不对，用 `--dry-run` 先看一遍再改 `SETTINGS_REL` 重装。
+如果 IDE 目录不存在，说明 `install.py` 自动检测跳过了。用 `--ide <name>` 显式指定即可。
+也可以 `python scripts/install.py --project <路径> --dry-run` 先看计划输出。
 
 ---
 
@@ -136,3 +188,4 @@ cat <你的项目>/.codebuddy/settings.json
 - **钩子命令一律用绝对路径**：`install.py` 会把裸 `python` 换成探测到的解释器绝对路径。PATH 不完整时裸 `python` 会静默失败。
 - **`matcher` 在 IDE 与 CLI 下拿到的工具名不同**：配置文件里写 `Write|Edit` 两边都能匹配，但钩子脚本收到的 `tool_name` 可能是 IDE 风格（`write_to_file`）。本套件不依赖 `tool_name`，只用 `tool_input.file_path`，所以不受影响。
 - **多个钩子并行执行，不保证顺序**：本套件每个工具互相独立，不存在顺序依赖。
+- **Trae + Claude 共存时钩子会跑两次**：Trae 官方说会兼容读取 `.claude/settings.json`。项目同时有 `.trae/` 和 `.claude/` 时，Trae 会读两份配置合并执行，同一条钩子可能被触发两次。只用 Trae 时建议 `--ide trae` 显式指定，避免 `.claude/` 也被写入。

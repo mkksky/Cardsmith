@@ -9,14 +9,19 @@
        让 WorkBuddy 能加载这些技能。用户级，装一次全局可用。
 
     ② 装运行时（--project <路径>）
-       运行时 → <项目>/.cardsmith/
+       运行时 → <项目>/.codingskills/
          tools/  rules/  hooks/  scripts/
-       并把 hooks 配置**合并**进 <项目>/.codebuddy/settings.json
-       让这个项目里的编辑动作能触发卡片声明的检查。
+       并检测项目根下存在哪些 IDE 目录
+       （.codebuddy / .trae / .claude / .codex / .qoder），
+       把 hooks 配置**合并**进对应的 IDE 配置文件。自动适配多 IDE。
 
-    默认不碰项目的 git 配置。要同时装 git 钩子加 --with-git-hook：
-    宿主钩子不会被覆盖 —— 安装时探测后链式接力，卸载用 --uninstall-git-hook
-    （机制见 scripts/git_hooks.py）。
+    钩子必须「两层同时生效」缺一不可（老板 2026-10-24 定）：
+       会话层 —— IDE hooks（Trae: .trae/hooks.json 等），拦 AI 会话里的写操作
+       提交层 —— git 钩子（pre-commit / commit-msg / pre-push），拦人工提交
+     IDE 钩子只管住 AI 的 Write/Edit，人手动改完直接 commit 它看不见；
+     git 钩子只管提交，会话里改坏文件不能即时提醒 —— 所以 --project 模式
+     下两层**默认都装**：IDE 层按目录检测自动写，git 层默认安装
+     （宿主钩子链式接力不覆盖），不想装 git 层显式传 --no-git-hook。
 
 用法：
     python scripts/install.py --dry-run                   # 先看会做什么
@@ -24,7 +29,10 @@
     python scripts/install.py --only format-lint-guard
     python scripts/install.py --link                      # 链接安装，改仓库即时生效
     python scripts/install.py --project /path/to/your-project
-    python scripts/install.py --project <路径> --with-git-hook
+    python scripts/install.py --project <路径>                # 两层钩子默认都装
+    python scripts/install.py --project <路径> --no-git-hook  # 只装会话层
+    python scripts/install.py --project <路径> --ide codebuddy trae   # 只装指定 IDE
+    python scripts/install.py --project <路径> --ide                  # 跳过 IDE hooks
 
 退出码：0 = 全部成功，1 = 有失败或冲突。
 """
@@ -44,12 +52,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build  # noqa: E402
 import git_hooks  # noqa: E402
+import ide_hosts  # noqa: E402
+from ide_hosts import merge_for_ide  # noqa: E402
+import project_baselines  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SKILLS_TARGET = Path.home() / ".workbuddy" / "skills"
-RUNTIME_DIRNAME = ".cardsmith"
-SETTINGS_REL = Path(".codebuddy") / "settings.json"
-STATE_FILE = ".cardsmith-state.json"
+RUNTIME_DIRNAME = ".codingskills"
+STATE_FILE = ".codingskills-state.json"
 
 RUNTIME_ITEMS = ("tools", "rules")
 
@@ -79,9 +89,14 @@ def make_link(src: Path, dest: Path) -> None:
     if os.name == "nt":
         dest.parent.mkdir(parents=True, exist_ok=True)
         # 不传 text=True：mklink 输出是控制台代码页字节，按 UTF-8 解会炸
-        proc = subprocess.run(["cmd", "/c", "mklink", "/J", str(dest), str(src)], capture_output=True)
+        proc = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(dest), str(src)], capture_output=True
+        )
         if proc.returncode != 0:
-            detail = proc.stderr.decode(errors="replace").strip() or proc.stdout.decode(errors="replace").strip()
+            detail = (
+                proc.stderr.decode(errors="replace").strip()
+                or proc.stdout.decode(errors="replace").strip()
+            )
             raise RuntimeError(f"mklink 失败（退出码 {proc.returncode}）：{detail}")
     else:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -100,14 +115,21 @@ def load_state(target: Path) -> set:
 
 def save_state(target: Path, names: set) -> None:
     with (target / STATE_FILE).open("w", encoding="utf-8", newline="\n") as fh:
-        json.dump({"installed": sorted(names), "source": str(REPO_ROOT)}, fh, ensure_ascii=False, indent=2)
+        json.dump(
+            {"installed": sorted(names), "source": str(REPO_ROOT)},
+            fh,
+            ensure_ascii=False,
+            indent=2,
+        )
         fh.write("\n")
 
 
 # ────────────────────────── ① 装技能 ──────────────────────────
 
 
-def install_skills(target: Path, names: "list[str]", use_link: bool, force: bool, dry: bool) -> int:
+def install_skills(
+    target: Path, names: "list[str]", use_link: bool, force: bool, dry: bool
+) -> int:
     if not target.is_dir() and not dry:
         target.mkdir(parents=True, exist_ok=True)
 
@@ -172,7 +194,14 @@ def _suite_version() -> str:
     return f.read_text(encoding="utf-8").strip()
 
 
-def install_runtime(project: Path, cards: "list[dict]", use_link: bool, dry: bool, with_git_hook: bool) -> int:
+def install_runtime(
+    project: Path,
+    cards: "list[dict]",
+    use_link: bool,
+    dry: bool,
+    with_git_hook: bool,
+    ide_filter: "list[str] | None" = None,
+) -> int:
     runtime = project / RUNTIME_DIRNAME
     print(f"  {'[dry-run] ' if dry else ''}运行时 → {runtime}")
 
@@ -215,6 +244,10 @@ def install_runtime(project: Path, cards: "list[dict]", use_link: bool, dry: boo
             shutil.copytree(src, dest)
         actions.append(f"[+] {item}/ → {dest}")
 
+    # baselines/ 与 rules/ 方向相反：rules 缺了就补，baselines 只补「声明了棘轮又还没有文件」的。
+    # 项目里的基线是债务清单，重装绝不能覆盖 —— 那等于替项目认账或销账。
+    actions.extend(project_baselines.init(runtime, cards, dry))
+
     # hooks/：run.py 复制；registry/hooks.json 按 prefix 重新生成
     hooks_dest = runtime / "hooks"
     if not dry:
@@ -240,7 +273,7 @@ def install_runtime(project: Path, cards: "list[dict]", use_link: bool, dry: boo
     ):
         if rel not in generated:
             continue
-        # README 落为运行时根的 README.md —— 换机器克隆项目后，.cardsmith/ 不再是黑盒
+        # README 落为运行时根的 README.md —— 换机器克隆项目后，.codingskills/ 不再是黑盒
         dest = runtime / ("README.md" if rel == "RUNTIME-README.md" else rel)
         if dry:
             actions.append(f"[+] {rel} → {dest}（前缀 {prefix}）")
@@ -274,13 +307,36 @@ def install_runtime(project: Path, cards: "list[dict]", use_link: bool, dry: boo
             json.dumps(state, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        actions.append(f"[+] runtime-state.json（套件版本 {state['suite_version'] or '未知'}）")
+        actions.append(
+            f"[+] runtime-state.json（套件版本 {state['suite_version'] or '未知'}）"
+        )
 
     for a in actions:
         print(f"    {a}")
 
-    # 合并 hooks 配置进项目的 settings.json
-    rc = merge_settings(project, generated["hooks/hooks.json"], dry)
+    # 多 IDE hooks 检测：项目根下存在哪些 IDE 目录就往哪些写
+    rc = 0
+    detected = ide_hosts.detect(project, ide_filter)
+    if detected:
+        print(
+            f"    IDE 目录检测到 {len(detected)} 个："
+            f"{', '.join(a.display for a in detected)}"
+        )
+        # Trae 官方说会兼容读取 .claude/settings.json，如果 Trae + Claude 都装了
+        # 同一条钩子在 Trae 里可能跑两次 —— 提醒用户
+        ids = {a.id for a in detected}
+        if "trae" in ids and "claude" in ids:
+            print(
+                "    [!] Trae 会兼容读取 .claude/settings.json，"
+                "Trae 会话里同一条钩子可能跑两次。"
+                "如果只用 Trae，删掉 .claude/ 或用 --ide trae 显式指定"
+            )
+        hooks_text = generated["hooks/hooks.json"]
+        for ad in detected:
+            rc |= merge_for_ide(project, ad, hooks_text, dry)
+    else:
+        dirs = ", ".join(f"{a.dir_name}/" for a in ide_hosts.ADAPTERS)
+        print(f"    [·] 未检测到任何 IDE 目录（{dirs}），跳过 IDE hooks 写入")
 
     if with_git_hook:
         rc |= git_hooks.install(project, dry)
@@ -288,76 +344,9 @@ def install_runtime(project: Path, cards: "list[dict]", use_link: bool, dry: boo
     return rc
 
 
-def merge_settings(project: Path, hooks_json_text: str, dry: bool) -> int:
-    """把生成的 hooks 合并进项目的 settings.json。
-
-    只替换本套件的条目（命令里含 run.py 的），别人加的钩子原样保留。
-    settings.json 由其它工具管理，整文件覆盖会毁掉用户的其它配置。
-    """
-    settings = project / SETTINGS_REL
-    generated = json.loads(hooks_json_text)
-    ours = generated.get("hooks", {})
-    # 生成时写的是 ${CODEBUDDY_PROJECT_DIR}/<prefix>hooks/run.py，
-    # 这里把它还原成**项目根**的绝对路径（prefix 已经在字符串里了，别再拼一次）
-    abs_project = str(project).replace("\\", "/")
-    if dry:
-        print(f"    [~] 合并 hooks 到 {settings}（{sum(len(v) for v in ours.values())} 组）")
-        return 0
-
-    data: dict = {}
-    if settings.is_file():
-        try:
-            data = json.loads(settings.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            print(f"    [x] {settings} 不是合法 JSON，未改动它：{exc}")
-            return 1
-
-    existing = data.get("hooks") or {}
-    if not isinstance(existing, dict):
-        print(f"    [x] {settings} 里的 hooks 不是对象，未改动它")
-        return 1
-
-    # 先摘掉本套件此前注入的条目
-    for event in list(existing.keys()):
-        groups = existing[event]
-        if not isinstance(groups, list):
-            continue
-        cleaned = []
-        for group in groups:
-            inner = group.get("hooks") if isinstance(group, dict) else None
-            if isinstance(inner, list):
-                inner = [h for h in inner if "run.py" not in str(h.get("command", ""))]
-                if not inner:
-                    continue
-                group = dict(group, hooks=inner)
-            cleaned.append(group)
-        if cleaned:
-            existing[event] = cleaned
-        else:
-            existing.pop(event, None)
-
-    # 再注入新的，同时把占位符换成本机真实路径 ——
-    # 钩子命令用绝对路径最稳，文档也这么建议；裸 python 在 PATH 不完整时会挂
-    python_exe = sys.executable.replace("\\", "/")
-    for event, groups in ours.items():
-        target_groups = existing.setdefault(event, [])
-        for group in groups:
-            new_group = dict(group)
-            new_group["hooks"] = []
-            for h in group.get("hooks", []):
-                cmd = str(h["command"]).replace("${CODEBUDDY_PROJECT_DIR}", abs_project)
-                if cmd.startswith("python "):
-                    cmd = f'"{python_exe}" ' + cmd[len("python ") :]
-                new_group["hooks"].append(dict(h, command=cmd))
-            target_groups.append(new_group)
-
-    data["hooks"] = existing
-    settings.parent.mkdir(parents=True, exist_ok=True)
-    with settings.open("w", encoding="utf-8", newline="\n") as fh:
-        json.dump(data, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    print(f"    [+] hooks 已合并进 {settings}")
-    return 0
+# IDE hooks 合并逻辑（merge_for_ide / _replace_paths_in_hooks / _clean_our_hooks）
+# 已拆到 scripts/ide_hosts.py —— 适配器注册 + 配置合并自成一体，install.py
+# 只管 detect + 循环调用。
 
 
 # install_git_hook 已拆到 scripts/git_hooks.py：钩子合并（探测宿主钩子 +
@@ -372,10 +361,35 @@ def main() -> int:
     ap.add_argument("--only", nargs="+", metavar="NAME", help="只处理指定卡片")
     ap.add_argument("--target", default=str(DEFAULT_SKILLS_TARGET), help="技能安装目录")
     ap.add_argument("--project", help="额外把运行时装到这个项目，并注入 hooks 配置")
-    ap.add_argument("--link", action="store_true", help="链接安装（Windows 用 junction）")
+    ap.add_argument(
+        "--link", action="store_true", help="链接安装（Windows 用 junction）"
+    )
     ap.add_argument("--force", action="store_true", help="覆盖非本套件安装的同名目录")
-    ap.add_argument("--with-git-hook", action="store_true", help="同时给项目装 git 钩子（宿主钩子链式接力，不覆盖）")
-    ap.add_argument("--uninstall-git-hook", action="store_true", help="卸载本套件 git 钩子并还原原 core.hooksPath（需配 --project）")
+    ap.add_argument(
+        "--with-git-hook",
+        action="store_true",
+        help="(默认已启用) 兼容保留：给项目装 git 钩子（宿主钩子链式接力，不覆盖）",
+    )
+    ap.add_argument(
+        "--no-git-hook",
+        action="store_true",
+        help="--project 模式下跳过 git 提交层钩子（默认两层都装，见文件头说明）",
+    )
+    ap.add_argument(
+        "--uninstall-git-hook",
+        action="store_true",
+        help="卸载本套件 git 钩子并还原原 core.hooksPath（需配 --project）",
+    )
+    ap.add_argument(
+        "--ide",
+        nargs="*",
+        metavar="IDE",
+        help=(
+            "显式指定要写入哪些 IDE 的钩子配置，不传则自动检测项目目录。"
+            f"可选值：{', '.join(a.id for a in ide_hosts.ADAPTERS)}；"
+            "传 --ide 不加值则跳过 IDE 钩子写入"
+        ),
+    )
     ap.add_argument("--dry-run", action="store_true", help="只打印计划，不改任何东西")
     args = ap.parse_args()
 
@@ -393,7 +407,13 @@ def main() -> int:
     rc = 0
 
     if not args.project:
-        rc |= install_skills(Path(args.target).expanduser().resolve(), names, args.link, args.force, args.dry_run)
+        rc |= install_skills(
+            Path(args.target).expanduser().resolve(),
+            names,
+            args.link,
+            args.force,
+            args.dry_run,
+        )
         if not args.dry_run and rc == 0:
             print()
             print("新装的技能需要重开会话才会被加载。")
@@ -409,9 +429,20 @@ def main() -> int:
         return git_hooks.uninstall(project, args.dry_run)
 
     print(f"安装目标：{project}\n")
-    rc |= install_skills(Path(args.target).expanduser().resolve(), names, args.link, args.force, args.dry_run)
+    rc |= install_skills(
+        Path(args.target).expanduser().resolve(),
+        names,
+        args.link,
+        args.force,
+        args.dry_run,
+    )
     print()
-    rc |= install_runtime(project, cards, args.link, args.dry_run, args.with_git_hook)
+    # 两层钩子默认都装：IDE 会话层（按目录检测）+ git 提交层（链式接力）。
+    # --no-git-hook 显式退出提交层。
+    with_git_hook = not args.no_git_hook
+    rc |= install_runtime(
+        project, cards, args.link, args.dry_run, with_git_hook, ide_filter=args.ide
+    )
 
     if not args.dry_run and rc == 0:
         print()

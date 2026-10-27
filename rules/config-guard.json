@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "description": "配置一致性守卫：只检查能被机器确定的 application*.yml 危险配置。阻断档只放 CORS 通配，其余进提示档 —— 历史配置一次性改成阻断会把门禁逼成 --no-verify。",
+  "files": [
+    "backend/src/main/resources/application*.yml",
+    "backend/src/main/resources/application*.yaml"
+  ],
+  "checks": [
+    {
+      "id": "cors-wildcard-credentials",
+      "mode": "blocking",
+      "why": "CORS 允许任意来源时若再开启凭证（cookie / Authorization），等于把登录态交给任意站点。只放行带端口的 localhost 通配不算（http://localhost:*）"
+    },
+    {
+      "id": "plaintext-password-default",
+      "mode": "advisory",
+      "why": "密码字段带非空默认值 = 把口令写进仓库；环境变量未配置时会静默连到开发库。生产 profile 必须没有默认值"
+    },
+    {
+      "id": "jwt-secret-default",
+      "mode": "advisory",
+      "why": "JWT 密钥带默认值，忘记配环境变量时就用仓库里公开的字符串签发 token，任何人都能伪造"
+    },
+    {
+      "id": "ddl-auto-with-flyway",
+      "mode": "advisory",
+      "why": "Flyway 管表结构时又开 ddl-auto，两套来源会让库结构偏离迁移脚本，生产（ddl-auto: none）才暴露"
+    },
+    {
+      "id": "flyway-validate-disabled",
+      "mode": "advisory",
+      "why": "关闭迁移校验会掩盖 checksum 漂移；改过或删过历史脚本时，本地永远发现不了"
+    }
+  ]
+}

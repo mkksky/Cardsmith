@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 import baseline_store
+from import_collectors import mask_js_strings_and_comments
 
 TIMEOUT_GIT = 30
 
@@ -217,15 +218,27 @@ def check_one(rel: str, root: Path, rules: dict) -> "list[dict]":
     issues = []
     if "except-pass" in rules.get("builtin", []):
         issues.extend(_builtin_except_pass(rel, text))
+
+    # 正则扫描跑在「屏蔽了字符串与注释」的文本上，而不是原文。
+    # 否则会命中字符串字量里的代码样本 —— 最常见的两处：
+    #   1. 自检用例本身：case("JS 空 catch", {"bad.js": "try { f() } catch (e) {}"} ...)
+    #      这行把一条空 catch 写进了 .py 文件的字符串里，扫全文必然命中
+    #   2. 文档/配置里的示例代码片段
+    # 误报不能用登记基线「赦免」（那是给真违规留的出口），只能让扫描器看不见字符串。
+    #
+    # mask_js_strings_and_comments 用轻量词法扫描，单双引号、反引号三态都处理，
+    # Python 的单/双引号字符串同样覆盖 —— 所以不按扩展名分流，统一屏蔽。
+    scan_src = mask_js_strings_and_comments(text)
+
     seen_spans: "set[tuple[int, int]]" = set()  # 同一位置命中多条模式时只报第一条，避免刷屏
     for p in rules["patterns"]:
-        for m in re.finditer(p["regex"], text, re.MULTILINE):
+        for m in re.finditer(p["regex"], scan_src, re.MULTILINE):
             span = (m.start(), m.end())
             if span in seen_spans:
                 continue
             seen_spans.add(span)
-            line_no = text.count("\n", 0, m.start()) + 1
-            nl = text.find("\n", m.start())
+            line_no = scan_src.count("\n", 0, m.start()) + 1
+            nl = scan_src.find("\n", m.start())
             snippet = text[m.start() : nl if nl != -1 else len(text)]
             issues.append(
                 {
@@ -288,6 +301,12 @@ def _selftest() -> int:
     case("skip_paths 命中的文件不查", {"skip/x.py": "try:\n    f()\nexcept Exception:\n    pass\n"}, 0)
     case("非目标扩展名不查", {"note.md": "except: pass\n"}, 0)
     case("pass 后面有其他语句不算 except-pass", {"ok3.py": "try:\n    f()\nexcept Exception:\n    pass\n    log.info('handled')\n"}, 0)
+    # 字符串字面量里的代码样本不是真违规。这条是 0.8.0 提交时被自家 pre-commit
+    # 拦出来的真误报：上面那两条 JS 自检用例（{"bad.js": "try { f() } catch (e) {}"}）
+    # 本身就是「空 catch」文本，被扫全文必然命中。
+    case("字符串里的空 catch 样本 → 不算违规", {"sample.py": "CASES = [{\"js\": \"try { f() } catch (e) {}\"}]\n"}, 0)
+    case("注释里的空 catch → 不算违规", {"c.js": "// try { f() } catch (e) {}\n"}, 0)
+    case("真实空 catch 仍要拦（屏蔽后不能漏报）", {"real.js": "try { f() } catch (e) {}\n"}, 1)
 
     # 基线过滤
     with tempfile.TemporaryDirectory() as td:
@@ -323,6 +342,12 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--baseline", help="基线文件路径（默认自动发现 baselines/<rules 名>.baseline.json）")
     ap.add_argument("--update-baseline", action="store_true", help="把当前违规写入基线（棘轮登记），退出码 0")
+    ap.add_argument(
+        "--accept-debt",
+        action="store_true",
+        help="棘轮闸门：本次会新增债务时，显式认账放行（必须配 --debt-reason）",
+    )
+    ap.add_argument("--debt-reason", default="", help="认账理由，会记进基线文件的 accepted 段")
     args = ap.parse_args()
 
     if args.selftest:
@@ -364,9 +389,14 @@ def main() -> int:
 
     if args.update_baseline:
         keys = [violation_key(i) for i in issues]
-        baseline_store.write(baseline_path, keys)
-        print(f"[+] 基线已更新：{baseline_path}")
-        print(f"    登记存量债务 {len(set(keys))} 条。新增违规仍会阻断；修掉存量后重跑本命令收紧。")
+        try:
+            plan = baseline_store.apply_ratchet(
+                baseline_path, keys, baseline, args.accept_debt, args.debt_reason, set(targets)
+            )
+        except baseline_store.RatchetError as exc:
+            print(f"[x] {exc}", file=sys.stderr)
+            return 1
+        print(baseline_store.format_ratchet_report(baseline_path, plan))
         return 0
 
     debts = [i for i in issues if violation_key(i) in baseline]

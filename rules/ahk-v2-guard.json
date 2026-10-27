@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "AutoHotkey v2 语法守卫默认规则。抓「照着 v1 的记忆写 AHK v2」：缺 #Requires v2.0、用了 v2 已移除的内置变量、单引号字符串未闭合、auto-concat 缺空格、v1 命令式语法与裸赋值。依据 https://www.autohotkey.com/docs/v2/v2-changes.htm",
+  "extensions": [
+    ".ahk"
+  ],
+  "skip_paths": [
+    "**/.git/**",
+    "**/.workbuddy/**",
+    "**/.codingskills/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/dist/**",
+    "**/build/**"
+  ]
+}

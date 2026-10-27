@@ -1,0 +1,37 @@
+{
+  "description": "加载链路性能守卫 · 提示档。这里的规则**有正当的例外**，所以只提醒不阻断：循环里 await 可能是重试、批处理、依赖上一步结果；execSync 在 CLI 脚本里完全合理。它们出现在运行时热路径上才需要改，判定交给人。",
+  "extensions": [
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".vue",
+    ".py"
+  ],
+  "skip_paths": [
+    "**/.codingskills/**",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/*.min.js",
+    "**/*.generated.*",
+    "**/__tests__/**",
+    "**/*.test.js",
+    "**/*.spec.js",
+    "**/e2e/**",
+    "**/minitest/**",
+    "**/scripts/**",
+    "**/database/migrations/**"
+  ],
+  "builtin": [
+    "await-in-loop"
+  ],
+  "patterns": [
+    {
+      "id": "sync-exec",
+      "regex": "\\bexecSync\\s*\\(",
+      "why": "execSync 阻塞整个事件循环：出现在请求处理路径上时，同进程的所有并发请求一起等"
+    }
+  ]
+}

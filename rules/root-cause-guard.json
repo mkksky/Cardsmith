@@ -6,9 +6,7 @@
     "**/node_modules/**",
     "**/vendor/**",
     "**/dist/**",
-    "**/migrations/**",
-    "**/*_selftest.py",
-    "**/check_debug_smells.py"
+    "**/migrations/**"
   ],
   "builtin": ["except-pass"],
   "patterns": [

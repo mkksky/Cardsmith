@@ -1,7 +1,7 @@
 ---
 name: root-cause-protocol
 stage: debugging
-version: 1
+version: 2
 description: >-
   根因分析协议：禁止「让症状闭嘴而不是修问题」的调试写法。工具会抓裸 except、
   异常块里只有 pass、空 catch 块这类把错误静默吞掉的代码，并强制给出处理证据。

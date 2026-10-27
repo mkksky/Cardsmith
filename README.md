@@ -1,9 +1,9 @@
-# cardsmith
+# codingskills
 
 一套**卡片驱动**的编码规范强制套件。给 AI 编码助手装的规矩，不能只写在文档里 ——
 必须由程序在编辑后、提交前真的查。
 
-[English](#english) | 许可证：[MIT](LICENSE) | 当前版本：0.8.0
+[English](#english) | 许可证：[MIT](LICENSE) | 当前版本：0.10.9
 
 ## 它解决什么问题
 
@@ -23,19 +23,22 @@
 
 ```bash
 # 1. 克隆
-git clone https://github.com/mkksky/Cardsmith.git && cd Cardsmith
+git clone https://gitee.com/mkkluo/codingskills.git && cd codingskills
 
-# 2. 自检：确认套件自身没有漂移（14 项三方对账）
+# 2. 自检：确认卡片 / 生成物 / 磁盘文件三方对账没有漂移
 python scripts/check.py
 
-# 3. 装到你的项目（会自动接 git 钩子，宿主钩子链式接力不覆盖）
+# 3. 装到你的项目（自动检测多 IDE 目录 + git 钩子链式接力）
 python scripts/install.py --project /path/to/your-project --with-git-hook
 
-# 4. 装完先看它会做什么（可选，--dry-run 不改任何东西）
+# 4. 先看它会做什么（推荐：--dry-run 不改任何东西，还会列出检测到的 IDE）
 python scripts/install.py --project /path/to/your-project --dry-run
+
+# 5. 也可以显式指定只装哪些 IDE（默认自动检测项目根下存在哪些 IDE 目录）
+python scripts/install.py --project /path/to/your-project --ide codebuddy trae codex
 ```
 
-装完后运行时目录落在你项目里（默认名 `cardsmith`，前缀可配），
+装完后运行时目录落在你项目里（默认名 `codingskills`，前缀可配），
 `git config core.hooksPath` 指向 `githooks`。
 在项目里改一个源文件、或直接 `git commit` 一次，就能看到守卫在跑。
 
@@ -43,10 +46,16 @@ python scripts/install.py --project /path/to/your-project --dry-run
 直接改 JSON，再用 `--update-baseline` 收紧：
 
 ```bash
-python .cardsmith/tools/check_size_naming.py \
-  --rules .cardsmith/rules/file-size-and-naming-guard.json \
+python .codingskills/tools/check_size_naming.py \
+  --rules .codingskills/rules/file-size-and-naming-guard.json \
   --all --update-baseline        # --all 不能省：它写入本次扫描到的全部违规
 ```
+
+**装完就带一份空基线**：运行时下的 `baselines` 目录会按卡片声明补齐 `<规则名>.baseline.json`
+（`entries` 为空，另记 `initial` 首建日期）。这不是占位符 —— 它把「第一次
+`--update-baseline` 走 `first_build` 豁免、静默把扫到的违规全收成债务」那条路关掉了：
+之后新增债务必须 `--accept-debt --debt-reason` 才算认账。已有的基线文件重装一律不碰，
+坏文件（0 字节 / 非法 JSON）会被点名，因为那会让检查以退出码 2 失败。
 
 ## 数据流
 
@@ -54,11 +63,13 @@ python .cardsmith/tools/check_size_naming.py \
 cards/<name>.md          ★ 手写唯一真源
       │  scripts/build.py
       ├──→ skills/<name>/SKILL.md        技能本体（勿手改）
-      ├──→ hooks/hooks.json              WorkBuddy 钩子配置（勿手改）
+      ├──→ hooks/hooks.json              中立钩子配置（勿手改）
       ├──→ hooks/registry.json           工具注册表（勿手改）
       └──→ hooks/<event>-plan.json       git 钩子清单：pre-commit / commit-msg / pre-push（勿手改）
 
       scripts/check.py  ← 三方对账，任一处漂移就报错
+      scripts/install.py  ← 装运行时 + 装 IDE 钩子（检测 .codebuddy/.trae/.claude/.codex/.qoder）
+      scripts/ide_hosts.py ← 5 个 IDE 适配器（配置路径、schema 差异）
       tools/*.py        ← 卡片声明的检查脚本，被钩子调用
       rules/*.json      ← 复杂规则的机器可读定义（零歧义）
 ```
@@ -66,35 +77,63 @@ cards/<name>.md          ★ 手写唯一真源
 **改任何东西的顺序**：改 `cards/` → `build.py` → `check.py`。直接改 `skills/` 或
 `hooks/` 会被 `check.py` 抓到并报错。
 
-## 11 个守卫
+## 17 个守卫
 
 | 守卫 | 检查什么 | 编辑后 | 提交前 |
 |---|---|---|---|
-| `layered-architecture-guard` | 分层依赖方向（AST，含函数体延迟导入） | 提示 | **阻断** |
+| `layered-architecture-guard` | 分层依赖方向（AST，含函数体延迟导入）+ forbidden_dependencies / forbidden_annotations 扩展 | 提示 | **阻断 + 提示** |
 | `file-size-naming-guard` | 单文件行数上限（js/ts/vue 600，其余 500，java 800）+ 文件名规范 | 提示 | **阻断** |
 | `format-lint-guard` | 调本机 ruff / ruff-format / eslint，统一退出码 | 提示 | **阻断** |
 | `root-cause-protocol` | 裸 except / except-pass / 空 catch 等吞错误写法 | 提示 | **阻断** |
 | `db-migration-guard` | 受保护路径（迁移脚本等）下的任何暂存变更 | 提示 | **阻断** |
-| `doc-sync-guard` | 文档引用的路径是否存在、API 文档方法名与源码 AST 对账 | 提示 | **阻断** |
+| `doc-sync-guard` | 文档引用路径、API 文档符号对账，可选检查新增源码是否登记进指定文档 | 提示 | **阻断** |
 | `secrets-guard` | 私钥块、云厂商 token、密钥形态赋值（两级严重度） | 提示 | **阻断** |
 | `stale-import-guard` | 模块被搬迁/改名后引用没跟上（Python AST + JS/TS/Vue 正则） | 提示 | **阻断** |
+| `ahk-v2-guard` | AutoHotkey 脚本是否用 v2 语法（缺 `#Requires v2.0`、v1 已移除的内置变量、单引号未闭合、auto-concat 缺空格、v1 命令式语法） | 提示 | **阻断** |
+| `dead-code-guard` | 零引用导出 + 绑定后再没出现过的 require（引用语料永远全仓库） | 提示 | **阻断** |
+| `module-contract-guard` | 消费方解构请求的 CommonJS 导出是否由目标模块真实提供；动态导出保守跳过 | 提示 | **阻断** |
+| `perf-path-guard` | 双档：列表 key 用下标 / 循环内 setData / forEach 套 async（阻断档）；循环内 await / 请求路径上的 execSync（提示档） | 提示 | **阻断 + 提示** |
 | `multi-machine-sync-guard` | push 前 `ls-remote` 现查远端 SHA，对撞本地追踪分支 | — | **阻断** |
 | `commit-message-guard` | commit message 类型前缀与格式 | — | **阻断** |
+| `config-guard` | Spring Boot yml 的危险组合：CORS 裸通配（阻断）、明文密码默认值 / JWT 默认密钥 / Flyway 与 ddl-auto 并存（提示） | — | **阻断 + 提示** |
+| `artifact-guard` | 本次新增构建产物入库（阻断）、已跟踪的存量产物与前端产物目录落后源码超过阈值（提示） | — | **阻断 + 提示** |
 | `release-checklist` | 交付前把上面全部守卫的 `--all` 结果汇成一张表 | — | 手动 |
 
 `format-lint-guard` 在工具未安装时**安静跳过**而不是报错 —— 没装 ruff 就卡住提交，
 只会逼出 `--no-verify` 习惯，那样连真正重要的分层检查也一起失效。
 
+`perf-path-guard` 是唯一拆两档的守卫。`await-in-loop` 在一个真实小程序项目上跑出 66 处
+命中，抽样核验后多数是正当的：重试循环、分页游标、逐张压缩图片本来就必须串行。
+「这一轮要不要依赖上一轮的返回值」在语法层面根本不存在，所以它只能提醒；
+列表 key 用下标、循环内 `setData`、`forEach` 套 `async` 这些没有正当例外的才阻断。
+两档各有独立基线，互不干扰。
+
 ## 三层防线
 
-| 层 | 时机 | 依赖 WorkBuddy 钩子 |
+| 层 | 时机 | 依赖宿主钩子 |
 |---|---|---|
-| ① 编辑后提示 | `PostToolUse` | 是 |
-| ② 提交前阻断 | git `pre-commit` | 否 |
+| ① 编辑后提示 | `PostToolUse` | **是**（但自动适配 5 个 IDE，见下） |
+| ② 提交前阻断 | git `pre-commit` | 否 —— 纯 git 钩子 |
 | ③ 卡片对账 | 提交前 | 否 |
 
 ②③ 不依赖任何宿主，纯 git 钩子。若项目已有钩子（如 husky 的 pre-commit），
 探测到后链式接力，不覆盖。
+
+### 多 IDE 适配（2026-10-23）
+
+`install.py --project <路径>` 自动检测项目根下存在哪些 IDE 目录，分别写入
+对应的配置文件。也可用 `--ide <name> ...` 显式指定。
+
+| IDE | 项目目录 | 配置文件 | 宿主读 project？ |
+|---|---|---|---|
+| CodeBuddy / WorkBuddy | `.codebuddy/` | `settings.json` | ⚠️ WorkBuddy 桌面端屏蔽 |
+| Trae | `.trae/` | `hooks.json` | ✅ |
+| Claude Code | `.claude/` | `settings.json` | ✅ |
+| Codex (OpenAI) | `.codex/` | `hooks.json` | ✅ |
+| Qoder（阿里） | `.qoder/` | `settings.json` | ✅ |
+
+> ⚠️ **注意**：Trae 会兼容读取 `.claude/settings.json`。项目同时有 `.trae/` 和 `.claude/` 时，
+> Trae 里同一条钩子可能跑两次。只用 Trae 时建议 `--ide trae` 显式指定。
 
 ## 目录
 
@@ -106,6 +145,7 @@ cards/<name>.md          ★ 手写唯一真源
 | `tools/` | 检查脚本，卡片用 `id` 引用 |
 | `rules/` | 规则细节 JSON，卡片用 `source` 引用 |
 | `scripts/` | 套件自身工具链（不随技能分发） |
+| `scripts/ide_hosts.py` | 5 个 IDE 钩子配置适配器（CodeBuddy / Trae / Claude / Codex / Qoder） |
 | `docs/` | 规范、验证方法、候选清单、真实踩坑案例 |
 | `templates/` | 新卡片模板 |
 | `CHANGELOG.md` | 变更记录（版本号唯一用途是运行时对账） |
@@ -116,10 +156,12 @@ cards/<name>.md          ★ 手写唯一真源
 ```bash
 python scripts/new_card.py <name> [--stage debugging]   # 建卡片
 python scripts/build.py                                 # 卡片 → 生成物
-python scripts/check.py                                 # 三方对账
+python scripts/check.py                                 # 三方对账 + README/VERSION 对账
 python scripts/install.py                               # 装技能到 ~/.workbuddy/skills/
-python scripts/install.py --project <项目> --dry-run      # 先看会做什么
+python scripts/install.py --project <项目> --dry-run      # 预览：检测到哪些 IDE、会写哪些文件
 python scripts/install.py --project <项目> --with-git-hook
+python scripts/install.py --project <项目> --ide trae codex   # 只装指定 IDE（不检测，不管目录存不存在）
+python scripts/install.py --project <项目> --ide              # 跳过 IDE hooks（只装运行时 + git 钩子）
 ```
 
 ## 自检
@@ -157,10 +199,16 @@ python tools/release_checklist.py --rules rules/release-checklist.json   # 全�
 **新增正则类守卫，先在真实项目上跑一遍 `--all` 看误报率。** 过三成就不能直接当
 blocking 用 —— `stale-import-guard` 首发误报率 64%（把「修复记录」注释里的历史
 `require()` 当成真导入），blocking 守卫误报过三成会被人当噪声绕过去，
-比没有守卫更糟：它给出「已检查过」的错觉。
+比没有守卫更糟：它给出「已检查过」的错觉。同一条判据的另一面是
+`perf-path-guard` 的双档设计：判定确定的留在阻断档，有正当例外的降到提示档。
+
+**README 也要对账。** 它手写、不被 `build.py` 覆盖，所以数量与版本号会自己漂：
+0.7.1 之后连续三个版本新增了两张卡片，README 整整停在「11 个守卫」。
+现在 `check.py` 会把 README 的守卫数量、守卫名字集合、版本号一并纳入对账 ——
+生成物有人管，手写文档同样得有人管。
 
 **版本号的唯一用途是运行时对账。** `hooks/run.py` 拿项目里
-`.cardsmith/runtime-state.json` 的 `suite_version` 与套件根 `VERSION` 比对，
+`.codingskills/runtime-state.json` 的 `suite_version` 与套件根 `VERSION` 比对，
 不一致就在 stderr 提示重装。改了 `tools/` `rules/` `hooks/` 的行为就必须 bump
 `VERSION` 并补 CHANGELOG —— 只改代码不升版本，对账永远报「一致」，
 项目里跑的还是旧工具。
@@ -169,7 +217,7 @@ blocking 用 —— `stale-import-guard` 首发误报率 64%（把「修复记�
 
 ## English
 
-**cardsmith** is a card-driven coding-standards enforcement suite. Rules for AI
+**codingskills** is a card-driven coding-standards enforcement suite. Rules for AI
 coding assistants must not live only in docs — they have to actually run at edit
 time and before commits.
 

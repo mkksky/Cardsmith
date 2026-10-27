@@ -45,7 +45,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build  # noqa: E402
-import yamlmini  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -103,7 +102,9 @@ def check_card(card: dict) -> Report:
     else:
         flat = desc.strip()
         if len(flat) < DESC_MIN:
-            rep.warn(f"description 仅 {len(flat)} 字，可能触发词不足（建议 {DESC_MIN}+）")
+            rep.warn(
+                f"description 仅 {len(flat)} 字，可能触发词不足（建议 {DESC_MIN}+）"
+            )
         elif len(flat) > DESC_MAX:
             rep.warn(f"description 达 {len(flat)} 字，偏长（建议 <{DESC_MAX}）")
 
@@ -125,7 +126,9 @@ def check_card(card: dict) -> Report:
                 f"        卡片说要有，磁盘上没有 —— 要么补文件，要么从卡片里删掉这条声明"
             )
         if not script.startswith("tools/"):
-            rep.warn(f"tool {tool['id']!r} 的 script 不在 tools/ 下：{script}（规范要求放 tools/）")
+            rep.warn(
+                f"tool {tool['id']!r} 的 script 不在 tools/ 下：{script}（规范要求放 tools/）"
+            )
 
     # 规则源文件同理
     for rule in card["rules"]:
@@ -213,7 +216,7 @@ def check_registry_consistency(cards: "list[dict]") -> Report:
         except json.JSONDecodeError as exc:
             rep.error(f"registry.json 不是合法 JSON：{exc}")
             reg = {}
-        for tid in (reg.get("tools") or {}):
+        for tid in reg.get("tools") or {}:
             if tid not in declared:
                 rep.error(
                     f"registry.json 里有卡片未声明的工具：{tid!r}\n"
@@ -241,6 +244,56 @@ def check_registry_consistency(cards: "list[dict]") -> Report:
                             f"hooks.json 的 {event} 引用了卡片未声明的工具：{tid!r}\n"
                             f"        命令：{cmd}"
                         )
+
+    return rep
+
+
+def check_readme(cards: "list[dict]") -> Report:
+    """README 手写、不在 build 覆盖范围内，所以它的数量和版本号会自己漂。
+
+    只对账两处机器可裁断的事实：守卫数量、守卫名字集合。措辞和正文不管。
+    """
+    rep = Report("README 与卡片 / VERSION 的一致性")
+    path = REPO_ROOT / "README.md"
+    if not path.is_file():
+        rep.warn("README.md 不存在，跳过")
+        return rep
+    text = path.read_text(encoding="utf-8")
+
+    ver_path = REPO_ROOT / "VERSION"
+    if ver_path.is_file():
+        ver = ver_path.read_text(encoding="utf-8").strip()
+        m = re.search(r"当前版本[：:]\s*([0-9][0-9A-Za-z.\-]*)", text)
+        if not m:
+            rep.warn("README 里找不到「当前版本：x.y.z」")
+        elif m.group(1) != ver:
+            rep.error(
+                f"README 声明版本 {m.group(1)}，VERSION 是 {ver}\n"
+                f"        bump VERSION 时要连 README 一起改"
+            )
+
+    m = re.search(r"^## (\d+) 个守卫\s*$", text, re.M)
+    if not m:
+        rep.warn("README 里找不到「## N 个守卫」章节")
+        return rep
+
+    declared = int(m.group(1))
+    if declared != len(cards):
+        rep.error(
+            f"README 写「{declared} 个守卫」，cards/ 实际 {len(cards)} 张卡片\n"
+            f"        新增卡片后要同时补 README 的守卫表"
+        )
+
+    rest = text[m.end() :]
+    nxt = re.search(r"^(## |---)", rest, re.M)
+    section = rest[: nxt.start()] if nxt else rest
+    listed = set(re.findall(r"^\|\s*`([A-Za-z0-9\-_]+)`", section, re.M))
+
+    names = {c["name"] for c in cards}
+    for name in sorted(names - listed):
+        rep.error(f"守卫表里缺卡片：{name}（cards/{name}.md 存在，README 没写）")
+    for name in sorted(listed - names):
+        rep.error(f"守卫表里有不存在的卡片：{name}（cards/ 里没有这个）")
 
     return rep
 
@@ -276,6 +329,7 @@ def main() -> int:
         reports.append(check_tool_id_uniqueness(cards))
         reports.append(check_artifacts(cards))
         reports.append(check_registry_consistency(cards))
+        reports.append(check_readme(cards))
 
     failed = [r for r in reports if not r.ok]
     warned = [r for r in reports if r.ok and r.warns]
@@ -289,7 +343,9 @@ def main() -> int:
     total_warns = sum(len(r.warns) for r in reports)
     passed = len([r for r in reports if r.ok and not r.warns])
 
-    print(f"{len(reports)} 项检查：{passed} 全绿、{len(warned)} 有提醒、{len(failed)} 有错误（{total_errors} 错 / {total_warns} 警）")
+    print(
+        f"{len(reports)} 项检查：{passed} 全绿、{len(warned)} 有提醒、{len(failed)} 有错误（{total_errors} 错 / {total_warns} 警）"
+    )
 
     if failed:
         for r in failed:

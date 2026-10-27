@@ -8,16 +8,28 @@
 
 from pathlib import Path
 
-from check_doc_sync import collect_doc_files, check_path_refs, check_api_doc, is_skipped
+from check_doc_sync import run_doc_checks
+from doc_sync_checks import check_api_doc, check_path_refs, collect_doc_files
+from doc_sync_new_file_selftest import run_selftest as run_new_file_selftest
+from doc_sync_paths import is_skipped, parse_name_status
+from doc_sync_reverse import api_docs_triggered, docs_referencing, ref_matches_staged
+
+
+class _Args:
+    """编排函数只用到 quiet，测试里给个最简替身。"""
+
+    quiet = True
 
 
 def run_selftest() -> int:
     import tempfile
 
     failures = 0
+    ran = 0
 
     def case(name: str, expect: int, build) -> None:
-        nonlocal failures
+        nonlocal failures, ran
+        ran += 1
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             rules = build(root)
@@ -32,6 +44,15 @@ def run_selftest() -> int:
             if not ok:
                 print(f"      期望 {expect} 处，实际 {len(issues)}：{issues}")
                 failures += 1
+
+    def bool_case(name: str, expect: bool, actual: bool) -> None:
+        nonlocal failures, ran
+        ran += 1
+        ok = expect == actual
+        print(f"  [{'v' if ok else 'x'}] {name}")
+        if not ok:
+            print(f"      期望 {expect}，实际 {actual}")
+            failures += 1
 
     def base_rules(**over):
         rules = {
@@ -289,10 +310,169 @@ def run_selftest() -> int:
         )[-1],
     )
 
+    # ── 反向并入（2026-10-21）：代码改了 → 抓回引用它的文档 ──
+
+    bool_case("反查匹配：路径全等", True, ref_matches_staged("tools/x.py", "tools/x.py"))
+    bool_case(
+        "反查匹配：文档邻域相对路径（docs/a.md 写 guide.md）",
+        True,
+        ref_matches_staged("guide.md", "docs/guide.md"),
+    )
+    bool_case(
+        "反查匹配：source_roots 前缀省略",
+        True,
+        ref_matches_staged("application/x.py", "pkg/application/x.py"),
+    )
+    bool_case("反查匹配：目录引用命中其下文件", True, ref_matches_staged("tools/", "tools/x.py"))
+    bool_case(
+        "反查匹配：目录引用不误伤同前缀目录",
+        False,
+        ref_matches_staged("tools/", "tooling/x.py"),
+    )
+    bool_case("反查匹配：无关路径不命中", False, ref_matches_staged("tools/x.py", "docs/x.md"))
+
+    def reverse_case(name: str, staged: list, expect_docs: list, build) -> None:
+        """反查集成：文档引用了谁，谁就被并入。"""
+        nonlocal failures, ran
+        ran += 1
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rules = build(root)
+            hits = docs_referencing(staged, collect_doc_files(root, rules), root, rules)
+            got = sorted(hits)
+            ok = got == sorted(expect_docs)
+            print(f"  [{'v' if ok else 'x'}] {name}")
+            if not ok:
+                print(f"      期望并入 {sorted(expect_docs)}，实际 {got}")
+                failures += 1
+
+    reverse_case(
+        "反查集成：改代码命中引用它的文档",
+        ["scripts/run.py"],
+        ["docs/a.md"],
+        lambda r: (
+            w(r, "docs/a.md", "见 `scripts/run.py`\n"),
+            w(r, "scripts/run.py", "print(1)\n"),
+            base_rules(),
+        )[-1],
+    )
+
+    reverse_case(
+        "反查集成：改无关文件不牵连文档",
+        ["scripts/other.py"],
+        [],
+        lambda r: (
+            w(r, "docs/a.md", "见 `scripts/run.py`\n"),
+            w(r, "scripts/run.py", "print(1)\n"),
+            base_rules(),
+        )[-1],
+    )
+
+    reverse_case(
+        "反查集成：引用带行号后缀也命中",
+        ["scripts/run.py"],
+        ["docs/a.md"],
+        lambda r: (
+            w(r, "docs/a.md", "见 `scripts/run.py:64`\n"),
+            w(r, "scripts/run.py", "print(1)\n"),
+            base_rules(),
+        )[-1],
+    )
+
+    bool_case(
+        "api 反查：暂存文件落在 search_roots 下触发对账",
+        True,
+        bool(
+            api_docs_triggered(
+                ["src/kline.py"],
+                [{"doc": "docs/api.md", "search_roots": ["src"]}],
+            )
+        ),
+    )
+    bool_case(
+        "api 反查：search_roots 外不触发",
+        False,
+        bool(
+            api_docs_triggered(
+                ["lib/kline.py"],
+                [{"doc": "docs/api.md", "search_roots": ["src"]}],
+            )
+        ),
+    )
+
+    # ── 暂存清单解析 ──
+
+    bool_case(
+        "暂存清单：删除的路径也进清单（删文件正是漂移高发场景）",
+        True,
+        "a.py" in parse_name_status("D\0a.py\0"),
+    )
+    bool_case(
+        "暂存清单：重命名的旧路径也进清单",
+        True,
+        "old.py" in parse_name_status("R100\0old.py\0new.py\0"),
+    )
+    bool_case(
+        "暂存清单：新增/修改路径正常解析",
+        True,
+        parse_name_status("A\0a.py\0M\0b.py\0") == ["a.py", "b.py"],
+    )
+
+    # ── 编排：反向并入真的会拦下漂移 ──
+
+    def orchestration_case(name: str, paths: list, expect_files: list, build) -> None:
+        """暂存模式编排：改代码 → 引用它的文档被并入 → 过期引用被报出来。"""
+        nonlocal failures, ran
+        ran += 1
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            rules = build(root)
+            issues, checked = run_doc_checks(paths, root, rules, _Args(), True)
+            got = sorted({i["file"] for i in issues})
+            ok = got == sorted(expect_files)
+            print(f"  [{'v' if ok else 'x'}] {name}")
+            if not ok:
+                print(f"      期望报出 {sorted(expect_files)}，实际 {got}（checked={sorted(checked)}）")
+                failures += 1
+
+    orchestration_case(
+        "编排：暂存代码被删，引用它的白名单文档一并报漂移",
+        ["scripts/gone.py"],
+        ["docs/a.md"],
+        lambda r: (
+            w(r, "docs/a.md", "见 `scripts/gone.py`\n"),
+            base_rules(),
+        )[-1],
+    )
+
+    orchestration_case(
+        "编排：暂存代码没被文档引用，不牵连任何文档",
+        ["scripts/other.py"],
+        [],
+        lambda r: (
+            w(r, "docs/a.md", "见 `scripts/gone.py`\n"),
+            base_rules(),
+        )[-1],
+    )
+
+    orchestration_case(
+        "编排：白名单外的文档不被并入（白名单纪律）",
+        ["scripts/gone.py"],
+        [],
+        lambda r: (
+            w(r, "notes/a.md", "见 `scripts/gone.py`\n"),
+            base_rules(doc_roots=["docs"]),
+        )[-1],
+    )
+
+    new_ran, new_failures = run_new_file_selftest()
+    ran += new_ran
+    failures += new_failures
+
     print()
     if failures:
         print(f"自检失败：{failures} 项异常")
         return 1
-    total = 20
+    total = ran
     print(f"自检全绿：{total}/{total}")
     return 0

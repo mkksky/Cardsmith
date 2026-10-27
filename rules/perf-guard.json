@@ -1,0 +1,47 @@
+{
+  "description": "加载链路性能守卫 · 阻断档。只放「判定确定、没有正当理由」的坏味 —— 误报过三成的规则不能进这一档，否则会把人逼出 --no-verify。builtin 是块级检测器（正则做不准），patterns 是行级正则。",
+  "extensions": [
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".vue",
+    ".py",
+    ".wxml"
+  ],
+  "skip_paths": [
+    "**/.codingskills/**",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/*.min.js",
+    "**/*.generated.*",
+    "**/__tests__/**",
+    "**/*.test.js",
+    "**/*.spec.js",
+    "**/e2e/**",
+    "**/minitest/**"
+  ],
+  "builtin": [
+    "setdata-in-loop",
+    "wx-for-no-key"
+  ],
+  "patterns": [
+    {
+      "id": "wx-key-index",
+      "regex": "\\bwx:key\\s*=\\s*\"(?:index|idx)\"",
+      "why": "wx:key 用下标：列表增删/刷新时 diff 认为位置没变，全部节点原地复用、内容重填，滚动位置和图片加载状态都丢。改用稳定唯一字段（id / _id / 业务主键）。注意字符串数组用 *this 是正确写法，不在拦截范围"
+    },
+    {
+      "id": "async-in-foreach",
+      "regex": "\\.forEach\\s*\\(\\s*async\\b",
+      "why": "forEach 不等待 async 回调：遍历瞬间结束、回调还在飞，后续逻辑读到的是半成品。要并发用 map + Promise.all，要串行用 for...of"
+    },
+    {
+      "id": "await-sleep",
+      "regex": "await\\s+new\\s+Promise\\s*\\(\\s*(?:\\(?\\s*\\w+\\s*\\)?\\s*)?=>\\s*setTimeout\\s*\\(",
+      "why": "用睡眠等异步完成：慢的根源没解决，只是把等待写进代码，而且每次都白等固定时长。应改成事件/回调/Promise 链"
+    }
+  ]
+}

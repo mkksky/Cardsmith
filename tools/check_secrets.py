@@ -203,6 +203,12 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--baseline", help="基线文件路径（默认自动发现）")
     ap.add_argument("--update-baseline", action="store_true", help="登记存量 hard 违规")
+    ap.add_argument(
+        "--accept-debt",
+        action="store_true",
+        help="棘轮闸门：本次会新增债务时，显式认账放行（必须配 --debt-reason）",
+    )
+    ap.add_argument("--debt-reason", default="", help="认账理由，会记进基线文件的 accepted 段")
     args = ap.parse_args()
 
     if args.selftest:
@@ -268,8 +274,14 @@ def main() -> int:
 
     if args.update_baseline:
         keys = sorted({violation_key(i) for i in issues if i["severity"] == "hard"})
-        baseline_store.write(baseline_path, keys)
-        print(f"[+] 基线已更新：{baseline_path}（登记存量 hard {len(keys)} 条）")
+        try:
+            plan = baseline_store.apply_ratchet(
+                baseline_path, keys, baseline, args.accept_debt, args.debt_reason, set(files)
+            )
+        except baseline_store.RatchetError as exc:
+            print(f"[x] {exc}", file=sys.stderr)
+            return 1
+        print(baseline_store.format_ratchet_report(baseline_path, plan))
         return 0
 
     hard = [i for i in issues if i["severity"] == "hard"]

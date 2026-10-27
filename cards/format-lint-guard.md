@@ -1,7 +1,7 @@
 ---
 name: format-lint-guard
 stage: coding
-version: 1
+version: 2
 description: >-
   把项目已有的格式化与 lint 工具（ruff / ruff-format / eslint 等）接进提交链路，
   统一退出码与阻断策略，并在工具缺失时安静跳过而不是卡住提交。
@@ -14,7 +14,7 @@ tools:
     script: tools/check_format_lint.py
     args: ["--rules", "rules/format-lint-guard.json"]
     inputs: staged-files
-    exit: "0=通过或跳过 1=有违规 2=规则文件错误"
+    exit: "0=通过或跳过 1=有违规或执行失败 2=规则文件错误"
     desc: 调用本机已装的 ruff / ruff-format / eslint，统一到套件退出码
 hooks:
   - event: PostToolUse
@@ -76,6 +76,7 @@ rules:
 | **规则升级导致大面积报错** | 换个 ruff 版本，老代码突然多出几百个违规 | 锁定工具版本；或先只对改动文件生效，天然避开存量 |
 | **Windows 上可执行名不同** | Linux 上叫 `ruff`，某些环境里是 `ruff.exe`，`shutil.which` 找不到 | `shutil.which` 已处理 `.exe` 后缀；仍找不到就检查是否只装在虚拟环境里 |
 | **虚拟环境未激活** | 工具装在 `.venv` 里，但提交时用的是系统 Python，报「未安装」 | 用 venv 内的绝对路径，或在规则 `command` 里写完整路径 |
+| **Windows 命令行超长伪装成未安装** | `--all` 全量时一次传几千个路径，超 CreateProcess 上限报 `[WinError 206]`，旧版把它并进「跳过」→ 门禁静默通过 | 工具按 `ARG_BUDGET` 自动分批；执行失败与未安装分开统计，前者退出码 1 |
 
 ## 实施步骤
 

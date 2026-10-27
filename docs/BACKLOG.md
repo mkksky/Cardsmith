@@ -32,7 +32,7 @@
 | 📝 | `java-spring-layering` | Spring Boot 特有的分层细节：DTO 转换位置、事务边界、Controller 不许写业务 | 与 `layered-architecture-guard` 有重叠，想清楚边界再建 |
 | 📝 | `vue-component-structure` | Vue 组件拆分粒度、props / emit 契约、状态该放哪 | 需要 AST 或 vue 编译器解析 `.vue`，工具成本较高 |
 | 🔧 | `db-migration-guard` | 数据库变更安全：可回滚设计、大表变更注意 | ✅ 已建（2026-09-24）。首版落地为**受保护路径阻断**（`tools/check_protected_paths.py`）：迁移目录任何暂存变更（含删除）pre-commit 拦截。迁移脚本可回滚性检查留待后续 |
-| ✅ | `doc-sync-guard` | 文档同步：文档引用的路径时效性 + API 文档方法名与源码 AST 对账 | ✅ 已建（2026-09-24，某 Python 项目 实测）。首轮真数据抓出 10 处真漂移零误报。参数级签名比对留待真实案例驱动 |
+| ✅ | `doc-sync-guard` | 文档同步：路径时效性 + API 符号对账 + 可选新增文件文档覆盖 | ✅ 已建（2026-09-24，某 Python 项目 实测）。2026-10-21 补反向引用并入与 `new_file_docs`；参数级签名比对留待真实案例驱动 |
 | ✅ | `secrets-guard` | 密钥防泄：私钥/云厂商 token/敏感文件暂存 → 阻断；密钥形态赋值 → 仅提醒不拦 | ✅ 已建（2026-09-24）。两级严重度设计：hard 零误报才阻断，soft 永不拦截——给「个人项目不想被打断」的场景留了余地。报告打码、基线存哈希不存原文 |
 
 ## 三、调试

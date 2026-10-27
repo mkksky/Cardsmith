@@ -3,7 +3,7 @@
 """runtime_readme.py —— 项目运行时 README 的渲染器
 
 从 cards/ 元数据派生检查清单，固定骨架（棘轮语义、规则归属）由套件维护。
-build.py 在 tree() 里调用；install.py 把产物落为 <项目>/.cardsmith/README.md。
+build.py 在 tree() 里调用；install.py 把产物落为 <项目>/.codingskills/README.md。
 
 独立成模块的原因：README 渲染是一类独立职责，且 build.py 受自家 500 行门禁约束。
 有意不 import build（避免循环导入），_with_prefix 为本地实现。
@@ -42,18 +42,18 @@ def _manual_cmd(
 
 
 def render_runtime_readme(cards: "list[dict]", prefix: str) -> str:
-    """项目运行时的 README：给打开 .cardsmith/ 的人类看的一页速查。
+    """项目运行时的 README：给打开 .codingskills/ 的人类看的一页速查。
 
     固定骨架（棘轮语义、规则归属）写死在这里，由套件维护；
     检查清单从卡片元数据派生 —— 卡片改了 README 跟着变，check.py 逐字节对账兜底。
-    install.py 装到项目时落为 .cardsmith/README.md。
+    install.py 装到项目时落为 .codingskills/README.md。
     """
     lines = [
-        "# cardsmith 运行时说明",
+        "# codingskills 运行时说明",
         "",
         "<!-- 本文件由 scripts/build.py 从 cards/ 生成，请勿直接修改。改内容请改 build.py 或对应卡片。 -->",
         "",
-        "本目录是 cardsmith 套件装进本项目的运行时，为 git 提交提供自动化检查门禁。",
+        "本目录是 codingskills 套件装进本项目的运行时，为 git 提交提供自动化检查门禁。",
         "工具清单与绑定关系由套件仓库的 `cards/` 声明；重装只会更新工具、补充新规则文件，",
         "**`rules/` 里的项目定制（层级 pattern、阈值、skip_paths、composition_roots）不会被覆盖**。",
         "",
@@ -115,11 +115,21 @@ def render_runtime_readme(cards: "list[dict]", prefix: str) -> str:
         "",
         "基线是待处理债务，不是豁免；显式指定 `--baseline` 但文件不存在 → 退出码 2。",
         "",
+        "## 显式豁免（已确认不是问题）",
+        "",
+        "性能守卫规则可用 `exemptions` 登记经核验的合理命中。每项必须写 "
+        "`file`、`pattern`、`reason`；可选 `match` 正则用于只放行同一文件中的特定循环。",
+        "豁免不会进入棘轮基线，也不会掩盖同文件后来新增的其它命中。",
+        "",
         "## 钩子",
         "",
         "- **git 钩子**：`.githooks/{pre-commit,commit-msg,pre-push}` 分别读 `hooks/<event>-plan.json`。"
         "工具缺失时跳过而非阻断；**退出码 2 = 配置错误，绝不能当通过处理**。",
-        "- **WorkBuddy 编辑时提示**：`hooks/hooks.json`（需 WorkBuddy 在场，失效不影响 git 门禁）。",
+        "- **IDE 编辑时提示**：由 `install.py` 自动检测项目根下的 IDE 目录并写入对应配置："
+        "`.codebuddy/settings.json`（CodeBuddy/WorkBuddy）、`.trae/hooks.json`（Trae）、"
+        "`.claude/settings.json`（Claude）、`.codex/hooks.json`（Codex）、"
+        "`.qoder/settings.json`（Qoder）。宿主不读 project 作用域时（已知 WorkBuddy 桌面端），"
+        "编辑提示失效，但 git 门禁不受影响。",
         "",
         "## 目录结构",
         "",
@@ -138,7 +148,7 @@ def render_runtime_readme(cards: "list[dict]", prefix: str) -> str:
         "- **真源在套件上游仓**（独立 git 仓库，不在本项目内）。改守卫行为的顺序：改上游",
         "  `cards/`、`tools/` → 上游跑 `scripts/build.py --check` → 重装本项目（`python",
         "  <上游>/scripts/install.py --project <本项目> --with-git-hook`）。**不要直接改本项目",
-        "  `.cardsmith/tools/`** —— 重装即被上游覆盖，改了不生效；运行时读的是 `tools/` 与",
+        "  `.codingskills/tools/`** —— 重装即被上游覆盖，改了不生效；运行时读的是 `tools/` 与",
         "  `rules/`，不是 `cards/`。",
         "- 本项目定制（`source_roots`、`cf_doc_bases`、`allow_refs`、`allow_ref_patterns`、棘轮基线）",
         "  全在 `rules/` 与 `baselines/`，跟本项目走，重装不覆盖。",

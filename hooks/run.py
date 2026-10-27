@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # 运行时根：脚本与规则文件的基准目录。registry 里的 tools/x.py 就是相对它。
 #   套件自身   → <仓库>/hooks/run.py     ⇒ 运行时根 = <仓库>
-#   装到项目   → <项目>/.cardsmith/hooks/run.py ⇒ 运行时根 = <项目>/.cardsmith
+#   装到项目   → <项目>/.codingskills/hooks/run.py ⇒ 运行时根 = <项目>/.codingskills
 RUNTIME_ROOT = HERE.parent
 REGISTRY_FILE = HERE / "registry.json"
 TOOL_TIMEOUT = 120
@@ -42,10 +42,10 @@ def project_root() -> Path:
     """被检查文件所属的项目根。
 
     与运行时根不是一个东西 —— 这点踩过坑：
-    装到项目后，tools 在 <项目>/.cardsmith/ 下，但被编辑的文件在 <项目>/ 下。
+    装到项目后，tools 在 <项目>/.codingskills/ 下，但被编辑的文件在 <项目>/ 下。
     两者混用会让文件路径无法转成相对路径，报错信息里全是不好读的绝对路径。
     """
-    if RUNTIME_ROOT.name == ".cardsmith":
+    if RUNTIME_ROOT.name == ".codingskills":
         return RUNTIME_ROOT.parent
     return RUNTIME_ROOT
 
@@ -90,6 +90,42 @@ def _extract_files(payload: dict) -> "list[str]":
         except (ValueError, OSError):
             out.append(p.as_posix())
     return out
+
+
+def _payload_file_paths(payload: dict) -> "list[Path]":
+    """从钩子输入里取出原始绝对路径（不做相对化）。"""
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return []
+    out: "list[Path]" = []
+    for key in ("file_path", "filePath", "path", "notebook_path", "target_file"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            out.append(Path(value))
+    return out
+
+
+def _belongs_to_project(payload: dict) -> bool:
+    """用户级部署守卫：被编辑文件不在本项目 → False（钩子静默放行）。
+
+    背景（docs/HOOKS-HOST-GAP.md 方案 A）：WorkBuddy 桌面端以
+    --setting-sources=user 启动宿主，项目级钩子配置被整体屏蔽；
+    把 hooks 写进用户级 settings 后，宿主在**任何**项目里编辑文件
+    都会触发本运行时，而命令指向的是固定项目的绝对路径 —— 不加守卫
+    会拿本项目的规则去查别的项目的文件。项目级部署不受影响（文件
+    天然在项目根下），套件仓库自身同理。
+    """
+    paths = _payload_file_paths(payload)
+    if not paths:
+        return True  # 拿不到文件路径（如 commit-msg 类事件）→ 维持原行为
+    root = project_root().resolve()
+    for p in paths:
+        try:
+            p.resolve().relative_to(root)
+            return True
+        except (ValueError, OSError):
+            continue
+    return False
 
 
 def check_runtime_version(root: "Path | None" = None) -> "str | None":
@@ -148,6 +184,12 @@ def main() -> int:
     tool_id = argv[0]
     blocking = "--blocking" in sys.argv
 
+    payload = _read_payload()
+
+    # 用户级部署守卫：文件不属于本项目 → 静默放行（docs/HOOKS-HOST-GAP.md 方案 A）
+    if not _belongs_to_project(payload):
+        return 0
+
     registry = _load_registry()
     entry = (registry.get("tools") or {}).get(tool_id)
     if entry is None:
@@ -166,7 +208,6 @@ def main() -> int:
         )
         return 0
 
-    payload = _read_payload()
     # cwd 留在运行时根（--rules 这类相对路径要对得上），
     # 但要把项目根显式告诉工具 —— 被检查的文件是相对项目根的。
     cmd = [

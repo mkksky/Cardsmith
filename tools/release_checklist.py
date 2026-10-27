@@ -14,7 +14,7 @@
     python tools/release_checklist.py --rules ... --selftest
 
 --root 接受两种值并统一收敛到运行时根（tools/ 的所在地）：手动执行给
-<项目>/.cardsmith（默认），run.py 调用给项目根。见 resolve_runtime_root()。
+<项目>/.codingskills（默认），run.py 调用给项目根。见 resolve_runtime_root()。
 """
 
 from __future__ import annotations
@@ -36,33 +36,33 @@ DEFAULT_TIMEOUT = 120
 def project_root(runtime: Path) -> Path:
     """被检查文件所属的项目根。**与运行时根不是一个东西。**
 
-    装到项目后 tools/ 在 <项目>/.cardsmith/ 下，而被检查的文件在 <项目>/ 下：
+    装到项目后 tools/ 在 <项目>/.codingskills/ 下，而被检查的文件在 <项目>/ 下：
         --registry / 找脚本 / cwd  → 运行时根
         传给子工具的 --root        → 项目根
-    混成一个会让子工具去扫 .cardsmith 自己，表现为「domain / application /
+    混成一个会让子工具去扫 .codingskills 自己，表现为「domain / application /
     presentation 都没匹配到任何文件」这类**假通过/假警报**而不是报错。
     （与 hooks/run.py、scripts/run_precommit.py 里的同名函数同一约定；
       2026-09-25 在 某 Python 项目 上实锤：--root 传项目根 → 全部子工具报
-      「脚本缺失」，传运行时根 → 子工具实际扫的是 .cardsmith。）
+      「脚本缺失」，传运行时根 → 子工具实际扫的是 .codingskills。）
     """
-    return runtime.parent if runtime.name == ".cardsmith" else runtime
+    return runtime.parent if runtime.name == ".codingskills" else runtime
 
 
 def resolve_runtime_root(candidate: Path) -> Path:
     """把 --root 统一收敛到**运行时根**（tools/ 的所在地）。
 
     这个参数有两条来路，值不一样：
-        手动执行  → 运行时根（<项目>/.cardsmith，也是默认值 REPO_ROOT）
+        手动执行  → 运行时根（<项目>/.codingskills，也是默认值 REPO_ROOT）
         run.py 调用 → 项目根（hooks/run.py 对所有工具一律传项目根）
 
     本工具要用 root 定位脚本，所以只认运行时根。给到项目根时会去找
     <项目根>/tools/*.py —— 不存在，于是**每一行都报「脚本缺失」**，
     看着像套件坏了，其实是参数语义不对（2026-09-25 实测踩到）。
-    判据用「tools/ 在不在」：能对上就直接用，对不上再看有没有 .cardsmith 子目录。
+    判据用「tools/ 在不在」：能对上就直接用，对不上再看有没有 .codingskills 子目录。
     """
-    if candidate.name == ".cardsmith" or (candidate / "tools").is_dir():
+    if candidate.name == ".codingskills" or (candidate / "tools").is_dir():
         return candidate
-    nested = candidate / ".cardsmith"
+    nested = candidate / ".codingskills"
     return nested if (nested / "tools").is_dir() else candidate
 
 
@@ -258,11 +258,11 @@ def selftest() -> int:
             sys.argv = saved
 
         # 用例 6：--root 收敛 —— 项目的 run.py 传项目根，手动执行传运行时根，都得出同一结果
-        (tdp / ".cardsmith" / "tools").mkdir(parents=True)
+        (tdp / ".codingskills" / "tools").mkdir(parents=True)
         check("--root 给运行时根 → 原样使用",
-              resolve_runtime_root(tdp / ".cardsmith") == tdp / ".cardsmith")
-        check("--root 给项目根 → 收敛到 .cardsmith",
-              resolve_runtime_root(tdp) == tdp / ".cardsmith")
+              resolve_runtime_root(tdp / ".codingskills") == tdp / ".codingskills")
+        check("--root 给项目根 → 收敛到 .codingskills",
+              resolve_runtime_root(tdp) == tdp / ".codingskills")
         check("--root 给无关目录 → 原样返回（交给上层报脚本缺失）",
               resolve_runtime_root(tdp / "fake") == tdp / "fake")
 

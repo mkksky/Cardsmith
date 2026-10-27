@@ -1,7 +1,7 @@
 ---
 name: stale-import-guard
 stage: coding
-version: 1
+version: 3
 description: >-
   失效导入路径检查：抓「模块被搬迁/改名后，引用没跟上」的失效导入 ——
   目标模块在当前仓库里根本不存在，运行时必然 ModuleNotFoundError /
@@ -16,6 +16,7 @@ tools:
     script: tools/check_stale_imports.py
     args: ["--rules", "rules/stale-import-guard.json"]
     inputs: staged-files
+    baseline: true
     exit: "0=通过 1=新增违规 2=规则/用法错误"
     desc: 解析导入说明符，校验目标模块在仓库内真实存在
 

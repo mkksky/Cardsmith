@@ -1,8 +1,8 @@
-# cardsmith 运行时说明
+# codingskills 运行时说明
 
 <!-- 本文件由 scripts/build.py 从 cards/ 生成，请勿直接修改。改内容请改 build.py 或对应卡片。 -->
 
-本目录是 cardsmith 套件装进本项目的运行时，为 git 提交提供自动化检查门禁。
+本目录是 codingskills 套件装进本项目的运行时，为 git 提交提供自动化检查门禁。
 工具清单与绑定关系由套件仓库的 `cards/` 声明；重装只会更新工具、补充新规则文件，
 **`rules/` 里的项目定制（层级 pattern、阈值、skip_paths、composition_roots）不会被覆盖**。
 
@@ -12,13 +12,20 @@
 
 | 检查 | 手动执行命令 | 退出码 |
 |---|---|---|
+| 校验 .ahk 脚本是否用了 AutoHotkey v2 语法 | `python tools/check_ahk_v2.py --rules rules/ahk-v2-guard.json --all` | 0=通过 1=有 v1 残留或语法问题 2=配置错误 |
+| git ls-files 识别新增产物，提示存量产物与构建目录落后天数 | `python tools/check_artifact_guard.py --rules rules/artifact-guard.json --all` | 0=通过（含提示） 1=新增产物入库 2=规则或 git 错误 |
 | 校验 commit message 的类型前缀、scope 与主题行长度 | `python tools/check_commit_msg.py --rules rules/commit-message-guard.json` | 0=通过 1=违规 2=配置错误 |
+| 正则匹配 yml 中的危险组合，CORS 裸通配阻断，其余走提示档 | `python tools/check_config_guard.py --rules rules/config-guard.json --all` | 0=通过（含提示） 1=阻断级配置 2=规则或配置错误 |
 | 阻断受保护路径（迁移脚本等）下的任何暂存变更 | `python tools/check_protected_paths.py --rules rules/db-migration-guard.json --all` | 0=通过 1=受保护路径有变更 2=规则或配置错误 |
-| 查文档引用的路径是否存在、API 文档声明的方法在源码里是否存在 | `python tools/check_doc_sync.py --rules rules/doc-sync-guard.json --all` | 0=通过 1=有违规 2=规则或配置错误 |
+| 检查暂存文件的 require 绑定使用情况与全仓库导出引用计数 | `python tools/check_dead_code.py --rules rules/dead-code-guard.json --all` | 0=通过或仅存量债务 1=新增死代码 2=配置错误 |
+| 查文档引用路径、API 符号，以及可选的新增文件文档覆盖 | `python tools/check_doc_sync.py --rules rules/doc-sync-guard.json --all` | 0=通过 1=有违规 2=规则或配置错误 |
 | 检查文件行数与文件名命名规范 | `python tools/check_size_naming.py --rules rules/file-size-and-naming-guard.json --all` | 0=通过 1=有违规 2=用法或配置错误 |
-| 调用本机已装的 ruff / ruff-format / eslint，统一到套件退出码 | `python tools/check_format_lint.py --rules rules/format-lint-guard.json --all` | 0=通过或跳过 1=有违规 2=规则文件错误 |
+| 调用本机已装的 ruff / ruff-format / eslint，统一到套件退出码 | `python tools/check_format_lint.py --rules rules/format-lint-guard.json --all` | 0=通过或跳过 1=有违规或执行失败 2=规则文件错误 |
 | 用 AST 解析各层文件的导入，判断是否违反分层依赖方向 | `python tools/check_import_direction.py --rules rules/layered-architecture-guard.json --all` | 0=通过 1=有违规 2=用法或配置错误 |
+| 检查内部解构 require 请求的成员是否由目标模块真实导出 | `python tools/check_module_contracts.py --rules rules/module-contract-guard.json --all` | 0=通过或仅存量债务 1=新增契约违规 2=规则/用法错误 |
 | ls-remote 现查远端 SHA 与本地 HEAD 对撞，落后/分叉即阻断 | `python tools/check_sync_state.py` | 0=状态允许继续 1=落后或分叉需先同步 2=配置错误 |
+| 阻断档：列表 key 用下标、循环内 setData、forEach+async、睡眠等异步 | `python tools/check_perf_smells.py --rules rules/perf-guard.json --all` | 0=通过 1=有新增坏味 2=规则或配置错误 |
+| 提示档：循环内 await、请求路径上的同步执行（有正当例外，只提醒） | `python tools/check_perf_smells.py --rules rules/perf-guard-advisory.json --all` | 0=通过 1=有提示项（不阻断）2=规则或配置错误 |
 | 聚合 registry 全部工具的 --all 结果出体检表，git 事件专用工具按规则排除 | `python tools/release_checklist.py --rules rules/release-checklist.json` | 0=全部通过（含 WARN） 1=有 FAIL 2=配置错误 |
 | 抓裸 except / except-pass / 空 catch 等吞错误的写法 | `python tools/check_debug_smells.py --rules rules/root-cause-guard.json --all` | 0=通过 1=有新增坏味 2=规则或配置错误 |
 | 扫描暂存文件里的私钥、云厂商 token、密钥形态赋值；高危阻断，可疑仅提醒 | `python tools/check_secrets.py --rules rules/secrets-guard.json --all` | 0=通过或仅软提醒 1=高危密钥 2=配置错误 |
@@ -28,11 +35,16 @@
 
 存量违规登记在基线文件里，**命中者只提示不阻断，新增违规照样拦截**：
 
+- `baselines/dead-code-guard.baseline.json`
 - `baselines/doc-sync-guard.baseline.json`
 - `baselines/file-size-and-naming-guard.baseline.json`
 - `baselines/layered-architecture-guard.baseline.json`
+- `baselines/module-contract-guard.baseline.json`
+- `baselines/perf-guard.baseline.json`
+- `baselines/perf-guard-advisory.baseline.json`
 - `baselines/root-cause-guard.baseline.json`
 - `baselines/secrets-guard.baseline.json`
+- `baselines/stale-import-guard.baseline.json`
 
 修掉存量后收紧（登记当前实际违规，退出码 0）：
 
@@ -42,10 +54,15 @@ python tools/<检查脚本> --rules rules/<规则>.json --all --update-baseline
 
 基线是待处理债务，不是豁免；显式指定 `--baseline` 但文件不存在 → 退出码 2。
 
+## 显式豁免（已确认不是问题）
+
+性能守卫规则可用 `exemptions` 登记经核验的合理命中。每项必须写 `file`、`pattern`、`reason`；可选 `match` 正则用于只放行同一文件中的特定循环。
+豁免不会进入棘轮基线，也不会掩盖同文件后来新增的其它命中。
+
 ## 钩子
 
 - **git 钩子**：`.githooks/{pre-commit,commit-msg,pre-push}` 分别读 `hooks/<event>-plan.json`。工具缺失时跳过而非阻断；**退出码 2 = 配置错误，绝不能当通过处理**。
-- **WorkBuddy 编辑时提示**：`hooks/hooks.json`（需 WorkBuddy 在场，失效不影响 git 门禁）。
+- **IDE 编辑时提示**：由 `install.py` 自动检测项目根下的 IDE 目录并写入对应配置：`.codebuddy/settings.json`（CodeBuddy/WorkBuddy）、`.trae/hooks.json`（Trae）、`.claude/settings.json`（Claude）、`.codex/hooks.json`（Codex）、`.qoder/settings.json`（Qoder）。宿主不读 project 作用域时（已知 WorkBuddy 桌面端），编辑提示失效，但 git 门禁不受影响。
 
 ## 目录结构
 
@@ -64,7 +81,7 @@ python tools/<检查脚本> --rules rules/<规则>.json --all --update-baseline
 - **真源在套件上游仓**（独立 git 仓库，不在本项目内）。改守卫行为的顺序：改上游
   `cards/`、`tools/` → 上游跑 `scripts/build.py --check` → 重装本项目（`python
   <上游>/scripts/install.py --project <本项目> --with-git-hook`）。**不要直接改本项目
-  `.cardsmith/tools/`** —— 重装即被上游覆盖，改了不生效；运行时读的是 `tools/` 与
+  `.codingskills/tools/`** —— 重装即被上游覆盖，改了不生效；运行时读的是 `tools/` 与
   `rules/`，不是 `cards/`。
 - 本项目定制（`source_roots`、`cf_doc_bases`、`allow_refs`、`allow_ref_patterns`、棘轮基线）
   全在 `rules/` 与 `baselines/`，跟本项目走，重装不覆盖。

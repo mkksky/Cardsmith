@@ -92,3 +92,98 @@ def candidate_refs(ref: str) -> "list[str]":
     if "pages/" in ref and not ref.endswith("/") and "." not in last:
         refs.append(ref.lstrip("/") + ".js")
     return refs
+
+
+def glob_to_regex(pattern: str):
+    """支持 ** / * / ? 的 glob → regex。** 跨目录，* 不跨。
+
+    开头的 **/ 按**标准 glob 语义**可匹配零层目录：**/node_modules/** 要能
+    命中 node_modules/x.js 本身，否则跳过规则对"目录就在根下"的形态失效
+    （secrets-guard 自检抓过：**/src/** 匹配不上 src/app.py）。
+    """
+    out = []
+    i = 0
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "*":
+            if pattern[i : i + 3] == "**/":
+                # 任意位置的 **/ 都可匹配零层目录：src/**/*.py 要命中 src/x.py
+                out.append("(?:.*/)?")
+                i += 3
+                continue
+            if pattern[i : i + 2] == "**":
+                out.append(".*")
+                i += 2
+                continue
+            out.append("[^/]*")
+        elif ch == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(ch))
+        i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+def is_skipped(rel: str, skip_patterns: list) -> bool:
+    """路径是否命中跳过规则（.codingskills/、node_modules/ 之类）。"""
+    return any(glob_to_regex(p).match(rel) for p in skip_patterns)
+
+
+def parse_name_status_records(text: str) -> "list[dict]":
+    """解析 `git diff --cached --name-status -z`，保留改动状态。
+
+    返回记录形如 ``{"status": "A", "path": "new.py"}``；重命名/复制额外带
+    ``old_path``。状态用于区分「新增路径」与「既有路径被修改」——新增文件文档
+    覆盖规则只看前者。
+    """
+    tokens = [t for t in text.split("\0") if t != ""]
+    records: list[dict] = []
+    i = 0
+    while i < len(tokens):
+        status = tokens[i]
+        i += 1
+        code = status[:1]
+        if code in ("R", "C"):  # 重命名/复制：两个路径
+            if i + 1 >= len(tokens):
+                break
+            records.append(
+                {"status": code, "old_path": tokens[i], "path": tokens[i + 1]}
+            )
+            i += 2
+            continue
+        if i >= len(tokens):
+            break
+        records.append({"status": code, "path": tokens[i]})
+        i += 1
+    return records
+
+
+def record_paths(records: "list[dict]") -> "list[str]":
+    """展开记录中的全部路径，旧路径在前、新路径在后（保持历史行为）。"""
+    paths: list[str] = []
+    for record in records:
+        old_path = record.get("old_path")
+        if old_path:
+            paths.append(str(old_path))
+        path = record.get("path")
+        if path:
+            paths.append(str(path))
+    return paths
+
+
+def added_paths(records: "list[dict]") -> "list[str]":
+    """返回新增路径：A，以及复制/改名的新目标路径（C / R）。"""
+    return [
+        str(record["path"])
+        for record in records
+        if record.get("status") in ("A", "C", "R") and record.get("path")
+    ]
+
+
+def parse_name_status(text: str) -> "list[str]":
+    """解析 `git diff --cached --name-status -z`，返回兼容旧调用的路径列表。
+
+    列表包含新增/修改的路径、删除的路径、重命名的旧路径。删除与旧路径是
+    文档漂移的高发场景 —— 文件挪了或没了，文档还指着它。
+    """
+    return record_paths(parse_name_status_records(text))

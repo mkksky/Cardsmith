@@ -35,164 +35,32 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
-import subprocess
 import sys
 from pathlib import Path
 
 import baseline_store
+import forbidden_checks
 import import_collectors
-
-TIMEOUT_GIT = 30
-
+from layer_spec import (
+    RuleError,
+    layer_of_module,
+    layer_of_path,
+    load_rules,
+)
+from source_scan import (
+    all_source_files,
+    git_staged_files,
+    is_skipped,
+    violation_key,
+)
 
 # ────────────────────────── 规则 ──────────────────────────
-
-
-class RuleError(Exception):
-    """规则文件的问题。对应退出码 2。"""
-
-
-def load_rules(path: Path) -> dict:
-    if not path.is_file():
-        raise RuleError(f"规则文件不存在：{path}")
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RuleError(f"规则文件不是合法 JSON：{path}\n    {exc}") from exc
-
-    layers = data.get("layers")
-    if not isinstance(layers, list) or not layers:
-        raise RuleError("规则文件缺少 layers（需要非空列表）")
-    for i, layer in enumerate(layers):
-        for field in ("name", "rank", "patterns"):
-            if field not in layer:
-                raise RuleError(f"layers[{i}] 缺少字段 {field!r}")
-        if not isinstance(layer["patterns"], list) or not layer["patterns"]:
-            raise RuleError(f"layers[{i}].patterns 必须是非空列表")
-
-    data.setdefault("policy", "outer-may-depend-on-inner")
-    data.setdefault("exempt", {})
-    data.setdefault("skip_paths", [])
-    comp = data.get("composition_roots", [])
-    if not isinstance(comp, list) or any(not isinstance(p, str) for p in comp):
-        raise RuleError("composition_roots 必须是字符串数组（glob pattern）")
-    return data
-
-
-def glob_to_regex(pattern: str) -> "re.Pattern[str]":
-    """把 glob 转成正则。** 跨目录，* 不跨目录。"""
-    out = []
-    i = 0
-    while i < len(pattern):
-        ch = pattern[i]
-        if ch == "*":
-            if pattern[i : i + 2] == "**":
-                if pattern[i : i + 3] == "**/":
-                    out.append(r"(?:.*/)?")
-                    i += 3
-                    continue
-                out.append(".*")
-                i += 2
-                continue
-            out.append("[^/]*")
-        elif ch == "?":
-            out.append("[^/]")
-        elif ch == ".":
-            out.append(r"\.")
-        else:
-            out.append(re.escape(ch))
-        i += 1
-    return re.compile("^" + "".join(out) + "$")
-
-
-def layer_of_path(rel_path: str, layers: list[dict]) -> "dict | None":
-    """按文件路径判断所属层。同一文件匹配多层时报错，避免静默取第一个。"""
-    hits = []
-    for layer in layers:
-        for pat in layer["patterns"]:
-            if glob_to_regex(pat).match(rel_path):
-                hits.append(layer)
-                break
-    if not hits:
-        return None
-    if len(hits) > 1:
-        names = ", ".join(h["name"] for h in hits)
-        raise RuleError(
-            f"文件同时匹配多个层：{rel_path} → {names}\n"
-            "    请把 layers[].patterns 改成互斥的，否则层归属不确定"
-        )
-    return hits[0]
-
-
-def layer_of_module(module_path: str, layers: list[dict]) -> "dict | None":
-    """按被导入的模块路径判断它属于哪一层。
-
-    两种匹配方式，先精确后兜底：
-      1. 模块路径转成候选文件路径后匹配 patterns（精确）
-      2. 模块路径中出现了某个层的名字段（兜底，覆盖「项目根即层根」的布局）
-    """
-    if not module_path:
-        return None
-    parts = module_path.split(".")
-    candidates = [
-        "/".join(parts) + ".py",
-        "/".join(parts) + "/__init__.py",
-    ]
-    for cand in candidates:
-        hit = layer_of_path(cand, layers)
-        if hit:
-            return hit
-    # 兜底：模块名里直接带层名
-    for layer in layers:
-        if layer["name"] in parts:
-            return layer
-    return None
-
+# 规则加载与「这条 import 属于哪一层」的判定见 layer_spec.py。
+# 拆出去是为了让本文件回到 500 行以内（套件自己的 size-naming 上限），
+# 那边是纯逻辑，这边只管收集与比对。
 
 # ────────────────────────── 文件收集 ──────────────────────────
-
-
-def git_staged_files(root: Path) -> list[str]:
-    try:
-        proc = subprocess.run(
-            # core.quotePath=false：默认会把中文路径转义成 "\345\260..." 这类字面串，
-            # 路径解析不到文件 → 检查静默通过（2026-10-10 修）
-            ["git", "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
-            cwd=root,
-            capture_output=True,
-            timeout=TIMEOUT_GIT,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuleError(f"读取 git 暂存文件失败：{exc}") from exc
-    if proc.returncode != 0:
-        raise RuleError("git 命令失败，当前目录可能不是 git 仓库")
-    out = proc.stdout.decode("utf-8", errors="replace")
-    return [line.strip() for line in out.splitlines() if line.strip()]
-
-
-def all_source_files(root: Path) -> list[str]:
-    out = []
-    for ext in ("*.py", "*.java"):
-        for f in root.rglob(ext):
-            rel = f.relative_to(root).as_posix()
-            if "/.git/" in f"/{rel}" or rel.startswith(".git/"):
-                continue
-            out.append(rel)
-    return sorted(out)
-
-
-def is_skipped(rel: str, skip_patterns: list[str]) -> bool:
-    return any(glob_to_regex(p).match(rel) for p in skip_patterns)
-
-
-# 基线（棘轮）的存取逻辑在 tools/baseline_store.py，两个检查工具共用。
-# 本工具只定义自己的键：文件 + 被导入模块，不含行号（行号随编辑漂移，不能当键）。
-
-
-def violation_key(v: dict) -> str:
-    return f"{v['file']}:{v['module']}"
-
+# 暂存区收集 / 全量扫描 / 路径豁免 / 基线键都在 source_scan.py
 
 # ────────────────────────── 解析 ──────────────────────────
 # 各语言的 import 收集器在 tools/import_collectors.py。
@@ -244,7 +112,8 @@ def check_file(
         # 一次解析同时拿到导入与 TYPE_CHECKING 范围，不做二次 AST 解析
         if bool(exempt.get("type_checking_blocks", False)):
             imports = [
-                (ln, m, t) for (ln, m, t) in imports
+                (ln, m, t)
+                for (ln, m, t) in imports
                 if not any(s <= ln <= e for s, e in tc_ranges)
             ]
         lang = "python"
@@ -255,12 +124,29 @@ def check_file(
         return []
 
     violations = []
+    # 只对项目自身的代码判层（project_packages 非空时生效）。
+    # 第三方库的模块名里常常带着层名 —— jakarta.persistence.Entity、
+    # org.springframework.dao.XxxRepository —— 被 **/persistence/**、**/repository/**
+    # 这类 glob 一匹配，就成了「domain 反向依赖 infrastructure」的假警报。
+    # 留空则判定范围不变（所有 import 都参与），所以是 opt-in。
+    project_packages = defs.get("project_packages") or []
     for lineno, mod, text in imports:
         if lang == "python":
             mod = resolve_relative(mod, rel)
+        if project_packages and not any(
+            mod == pkg or mod.startswith(pkg + ".") for pkg in project_packages
+        ):
+            continue
         target_layer = layer_of_module(mod, layers)
         if target_layer is None or target_layer["name"] == src_layer["name"]:
             continue
+        # 跨层直连：方向规则允许「外层依赖内层」，所以 presentation → infrastructure
+        # 永远是合法的，但它绕过了 service 的业务规则与事务边界。判定见 forbidden_checks。
+        violations.extend(
+            forbidden_checks.dependency_violations(
+                rel, lineno, text, src_layer, target_layer, mod, defs
+            )
+        )
         src_rank, dst_rank = src_layer["rank"], target_layer["rank"]
         policy = defs.get("policy", "outer-may-depend-on-inner")
         if policy == "outer-may-depend-on-inner":
@@ -280,6 +166,11 @@ def check_file(
                     "text": text,
                 }
             )
+
+    # 层级禁用的注解：典型是 Controller 上写 @Transactional。
+    violations.extend(
+        forbidden_checks.annotation_violations(path, rel, src_layer, defs)
+    )
     return violations
 
 
@@ -313,7 +204,15 @@ def _selftest() -> int:
             total = []
             for rel in files:
                 try:
-                    total.extend(check_file(root, rel, _SELFTEST_RULES["layers"], _SELFTEST_RULES["exempt"], _SELFTEST_RULES))
+                    total.extend(
+                        check_file(
+                            root,
+                            rel,
+                            _SELFTEST_RULES["layers"],
+                            _SELFTEST_RULES["exempt"],
+                            _SELFTEST_RULES,
+                        )
+                    )
                 except RuleError as exc:
                     print(f"  [x] {name}\n      {exc}")
                     failures += 1
@@ -321,16 +220,38 @@ def _selftest() -> int:
             if len(total) == expect_violations:
                 print(f"  [v] {name}")
             else:
-                print(f"  [x] {name}\n      期望 {expect_violations} 处违规，实际 {len(total)} 处：{total}")
+                print(
+                    f"  [x] {name}\n      期望 {expect_violations} 处违规，实际 {len(total)} 处：{total}"
+                )
                 failures += 1
 
-    case("内层引用外层 → 违规", {"src/domain/user.py": "from src.infrastructure.db import session\n"}, 1)
-    case("外层引用内层 → 放行", {"src/infrastructure/db.py": "from src.domain.user import User\n"}, 0)
-    case("同层引用 → 放行", {"src/domain/user.py": "from src.domain.order import Order\n"}, 0)
-    case("函数体内延迟导入 → 仍违规", {"src/domain/user.py": "def f():\n    from src.infrastructure.db import s\n    return s\n"}, 1)
+    case(
+        "内层引用外层 → 违规",
+        {"src/domain/user.py": "from src.infrastructure.db import session\n"},
+        1,
+    )
+    case(
+        "外层引用内层 → 放行",
+        {"src/infrastructure/db.py": "from src.domain.user import User\n"},
+        0,
+    )
+    case(
+        "同层引用 → 放行",
+        {"src/domain/user.py": "from src.domain.order import Order\n"},
+        0,
+    )
+    case(
+        "函数体内延迟导入 → 仍违规",
+        {
+            "src/domain/user.py": "def f():\n    from src.infrastructure.db import s\n    return s\n"
+        },
+        1,
+    )
     case(
         "TYPE_CHECKING 块 → 放行",
-        {"src/domain/user.py": "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from src.infrastructure.db import S\n"},
+        {
+            "src/domain/user.py": "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from src.infrastructure.db import S\n"
+        },
         0,
     )
 
@@ -341,12 +262,46 @@ def _selftest() -> int:
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text("from src.infrastructure.db import session\n", encoding="utf-8")
         rules2 = {**_SELFTEST_RULES, "composition_roots": ["**/user.py"]}
-        got = check_file(root, "src/domain/user.py", rules2["layers"], rules2["exempt"], rules2)
+        got = check_file(
+            root, "src/domain/user.py", rules2["layers"], rules2["exempt"], rules2
+        )
         if got == []:
             print("  [v] 组合根豁免：composition_roots 命中即放行")
         else:
             print(f"  [x] 组合根豁免未生效：{got}")
             failures += 1
+
+    # project_packages：只对项目自身代码判层，第三方库名里带的层名不算跨层
+    # （jakarta.persistence.Table 的模块路径会被 **/persistence/** 误匹配成 infrastructure）
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        rel = "src/domain/entity/User.java"
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("import jakarta.persistence.Table;\n", encoding="utf-8")
+        layers = [
+            {"name": "domain", "rank": 0, "patterns": ["**/domain/**"]},
+            {"name": "infrastructure", "rank": 2, "patterns": ["**/persistence/**"]},
+        ]
+        base = {**_SELFTEST_RULES, "layers": layers}
+        unrestricted = check_file(root, rel, layers, base["exempt"], base)
+        scoped = check_file(
+            root,
+            rel,
+            layers,
+            base["exempt"],
+            {**base, "project_packages": ["com.congge"]},
+        )
+        if len(unrestricted) == 1 and scoped == []:
+            print("  [v] project_packages：第三方库名带层名不再误判")
+        else:
+            print(
+                f"  [x] project_packages 过滤异常：unrestricted={unrestricted} scoped={scoped}"
+            )
+            failures += 1
+
+    # 跨层直连 + 层内禁用注解：判定在 forbidden_checks.py，单独自检
+    failures += forbidden_checks.selftest()
 
     # 基线（棘轮）：命中基线的债务放行，未命中的算新增；约定路径定位正确
     with tempfile.TemporaryDirectory() as td:
@@ -364,14 +319,16 @@ def _selftest() -> int:
         ):
             print("  [v] 基线过滤与约定路径定位")
         else:
-            print(f"  [x] 基线逻辑异常：keys={keys} fresh={fresh} discovered={discovered}")
+            print(
+                f"  [x] 基线逻辑异常：keys={keys} fresh={fresh} discovered={discovered}"
+            )
             failures += 1
 
     print()
     if failures:
         print(f"自检失败：{failures} 项异常")
         return 1
-    print("自检全绿：7/7")
+    print("自检全绿：8/8")
     return 0
 
 
@@ -387,8 +344,23 @@ def main() -> int:
     ap.add_argument("--staged", action="store_true", help="检查 git 暂存文件（默认）")
     ap.add_argument("--quiet", action="store_true", help="只在有违规时输出")
     ap.add_argument("--selftest", action="store_true", help="跑内置自检")
-    ap.add_argument("--baseline", help="基线文件路径（默认按约定自动发现 baselines/<rules 名>.baseline.json）")
-    ap.add_argument("--update-baseline", action="store_true", help="把当前违规写入基线（棘轮登记），退出码 0")
+    ap.add_argument(
+        "--baseline",
+        help="基线文件路径（默认按约定自动发现 baselines/<rules 名>.baseline.json）",
+    )
+    ap.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="把当前违规写入基线（棘轮登记），退出码 0",
+    )
+    ap.add_argument(
+        "--accept-debt",
+        action="store_true",
+        help="棘轮闸门：本次会新增债务时，显式认账放行（必须配 --debt-reason）",
+    )
+    ap.add_argument(
+        "--debt-reason", default="", help="认账理由，会记进基线文件的 accepted 段"
+    )
     args = ap.parse_args()
 
     if args.selftest:
@@ -421,7 +393,11 @@ def main() -> int:
         print(f"[x] {exc}", file=sys.stderr)
         return 2
 
-    targets = [t for t in targets if (t.endswith(".py") or t.endswith(".java")) and not is_skipped(t, skip)]
+    targets = [
+        t
+        for t in targets
+        if (t.endswith(".py") or t.endswith(".java")) and not is_skipped(t, skip)
+    ]
 
     # 零命中检测：某个层一个文件都没匹配到 → 多半是 pattern 写错了。
     # 这种「门禁在跑但什么都没检查」的假阳性最危险，必须报出来。
@@ -436,7 +412,10 @@ def main() -> int:
                 matched[hit["name"]] += 1
         empty = [n for n, c in matched.items() if c == 0]
         if empty:
-            print(f"[!] 这些层没有匹配到任何文件，请检查 rules 里的 patterns：{', '.join(empty)}", file=sys.stderr)
+            print(
+                f"[!] 这些层没有匹配到任何文件，请检查 rules 里的 patterns：{', '.join(empty)}",
+                file=sys.stderr,
+            )
 
     all_violations: list[dict] = []
     for rel in targets:
@@ -446,18 +425,35 @@ def main() -> int:
             print(f"[x] {exc}", file=sys.stderr)
             return 2
 
+    # 提示档（mode=advisory）单独摘出来：打印但不影响退出码，也不进基线。
+    # 阻断档（方向违规 / mode=blocking）才走棘轮。
+    all_violations, advisory = forbidden_checks.split_advisory(all_violations)
+    forbidden_checks.print_advisory(advisory)
+
     # ── 基线（棘轮）：存量债务放行，新增阻断 ──
     try:
-        baseline_path, baseline = baseline_store.open_baseline(Path(args.rules), args.baseline, args.update_baseline)
+        baseline_path, baseline = baseline_store.open_baseline(
+            Path(args.rules), args.baseline, args.update_baseline
+        )
     except baseline_store.BaselineError as exc:
         print(f"[x] {exc}", file=sys.stderr)
         return 2
 
     if args.update_baseline:
         keys = [violation_key(v) for v in all_violations]
-        baseline_store.write(baseline_path, keys)
-        print(f"[+] 基线已更新：{baseline_path}")
-        print(f"    登记存量债务 {len(set(keys))} 条。新增违规仍会阻断；修掉存量后重跑本命令收紧。")
+        try:
+            plan = baseline_store.apply_ratchet(
+                baseline_path,
+                keys,
+                baseline,
+                args.accept_debt,
+                args.debt_reason,
+                set(targets),
+            )
+        except baseline_store.RatchetError as exc:
+            print(f"[x] {exc}", file=sys.stderr)
+            return 1
+        print(baseline_store.format_ratchet_report(baseline_path, plan))
         return 0
 
     debts = [v for v in all_violations if violation_key(v) in baseline]
@@ -467,20 +463,28 @@ def main() -> int:
         print(f"[x] 发现 {len(fresh)} 处新增跨层依赖违规：\n")
         for v in fresh:
             print(f"  {v['file']}:{v['line']}")
-            print(f"    {v['from_layer']}(rank {v['from_rank']}) → {v['to_layer']}(rank {v['to_rank']})")
+            print(
+                f"    {v['from_layer']}(rank {v['from_rank']}) → {v['to_layer']}(rank {v['to_rank']})"
+            )
             print(f"    {v['text']}")
             print()
         print("分层规则：只允许外层依赖内层。修法二选一 ——")
         print("  1. 把被依赖的逻辑下沉到内层（推荐）")
         print("  2. 用接口/协议反转依赖：内层定义抽象，外层提供实现")
         if debts and not args.quiet:
-            print(f"\n[!] 另有 {len(debts)} 处为基线登记的存量债务，不阻断（基线：{baseline_path}）")
+            print(
+                f"\n[!] 另有 {len(debts)} 处为基线登记的存量债务，不阻断（基线：{baseline_path}）"
+            )
         return 1
 
     if debts and not args.quiet:
-        print(f"[!] {len(debts)} 处存量债务在基线中，已放行。修掉后跑 --update-baseline 收紧。")
+        print(
+            f"[!] {len(debts)} 处存量债务在基线中，已放行。修掉后跑 --update-baseline 收紧。"
+        )
     if not args.quiet:
-        print(f"[v] 分层依赖方向检查通过（检查了 {len(targets)} 个文件，新增 0 处违规）")
+        print(
+            f"[v] 分层依赖方向检查通过（检查了 {len(targets)} 个文件，新增 0 处违规）"
+        )
     return 0
 
 

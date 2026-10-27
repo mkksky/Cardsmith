@@ -1,7 +1,7 @@
 ---
 name: layered-architecture-guard
 stage: coding
-version: 4
+version: 6
 description: >-
   按分层架构约束代码的依赖方向：只允许外层依赖内层，阻止内层反向引用外层
   （如 domain 引用 infrastructure、entity 引用 service），并输出完整的违规导入链路。
@@ -87,14 +87,20 @@ def process():
 | **把测试也扫了** | `tests/` 里为了构造场景故意跨层，误报一片 | `skip_paths` 排除测试、迁移脚本、生成代码 |
 | **组合根被误报** | 组合根（DI 装配层）的本职就是把 infrastructure 具体实现装配进抽象接口，报违规是误伤 | 规则加 `composition_roots`（glob 数组），命中的文件整体放行。典型：`service_factory`、`application_context`。判定标准：该文件删了这些 import 系统就没法启动，且只做装配不做业务 |
 | **Java 的 import 是包名** | 直接把 Python 的模块名规则套到 Java 上，层级全判错 | Java 按 `package` 声明与 `import` 的全限定名判断，取包路径匹配 patterns |
+| **第三方库名带层名** | JPA 项目里 `import jakarta.persistence.Entity` 被判成「domain 依赖 infrastructure」，动辄几百条 | 模块名 `jakarta/persistence/Entity` 命中了 `**/persistence/**`。规则加 `project_packages: ["com.congge"]`（本项目包前缀），只对自身代码判层。**留空 = 不过滤**，所以对没配的项目零影响 |
 
 ## 实施步骤
 
 1. **先摸底，不要先设卡**。跑一次全量扫描，看清当前违规分布在哪些层、有多少
 2. 违规量小（个位数）→ 直接修
-3. 违规量大（几十上百）→ 走**棘轮**：`--update-baseline` 把现存违规登记进基线，只阻断新增。基线文件按约定自动发现：`baselines/<rules 名>.baseline.json`（与规则文件同级的上一级目录）。清单是待处理债务，不是豁免，销账方式是真修代码后重跑 `--update-baseline`
+3. 违规量大（几十上百）→ 走**棘轮**：`--all --update-baseline` 把现存违规登记进基线，只阻断新增。基线文件按约定自动发现：`baselines/<rules 名>.baseline.json`（与规则文件同级的上一级目录）。清单是待处理债务，不是豁免，销账方式是真修代码后重跑 `--update-baseline`
+   - **首建之后棘轮只降不升**：再跑 `--update-baseline` 若会新增键（架构腐化的典型形态 —— 又一处跨层调用），直接拒绝并列出是哪几条。确实要认账得显式 `--accept-debt --debt-reason "..."`。
+     没有这个闸门时，最省事的做法就是顺手重建基线把新违规赦免掉，架构腐化就会以「基线更新」的形式静默发生
 4. 把规则文件 `rules/layered-architecture-guard.json` 的层级与 pattern 对齐到项目的真实目录结构（照抄默认值多半是错的）
-5. 接入钩子：提交前阻断（`pre-commit` + `blocking: true`），编辑后仅提示（`PostToolUse` + `blocking: false`，避免边写边被打断）
+5. 规则里填 `project_packages`（如 `["com.congge"]`）：不加这一条，`jakarta.persistence.*`、
+   `org.springframework.dao.*` 这些第三方库名会被 `**/persistence/**`、`**/dao/**`
+   当成层路径，结果是一片假警报。**只对它判层，不等于放宽**：自身代码跨层照拦
+6. 接入钩子：提交前阻断（`pre-commit` + `blocking: true`），编辑后仅提示（`PostToolUse` + `blocking: false`，避免边写边被打断）
 
 ## 验证
 
