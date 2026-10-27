@@ -23,7 +23,7 @@
 
 ```bash
 # 1. 克隆
-git clone https://gitee.com/mkkluo/codingskills.git && cd codingskills
+git clone https://github.com/mkksky/Cardsmith.git && cd Cardsmith
 
 # 2. 自检：确认卡片 / 生成物 / 磁盘文件三方对账没有漂移
 python scripts/check.py
